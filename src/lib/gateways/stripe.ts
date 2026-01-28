@@ -8,9 +8,9 @@ export class StripeGateway implements GatewayProvider {
   private baseUrl = "https://api.stripe.com/v1";
 
   constructor(credentials: GatewayCredentials) {
-    if (!credentials.secretKey) throw new Error("Stripe: secretKey obrigatoria");
-    this.secretKey = credentials.secretKey;
-    this.webhookSecret = credentials.webhookSecret || "";
+    this.secretKey = credentials.secretKey || process.env.STRIPE_SECRET_KEY || "";
+    if (!this.secretKey) throw new Error("Stripe: secretKey obrigatoria");
+    this.webhookSecret = credentials.webhookSecret || process.env.STRIPE_WEBHOOK_SECRET || "";
   }
 
   private async request(path: string, options: RequestInit = {}) {
