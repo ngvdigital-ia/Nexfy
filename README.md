@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NexFy - Plataforma de Pagamentos
 
-## Getting Started
+Gateway de pagamento multi-provedor com area de membros, dashboard para infoprodutores e painel admin.
 
-First, run the development server:
+## Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Linguagem**: TypeScript (strict)
+- **Banco**: PostgreSQL via Supabase
+- **ORM**: Drizzle ORM
+- **Auth**: NextAuth v5 (Credentials + JWT)
+- **Email**: Resend
+- **Pagamentos**: Mercado Pago, Efi, PushinPay, Beehive, Hypercash, Stripe
+- **UI**: Tailwind CSS + Recharts
+- **Deploy**: Vercel Pro
+
+## Setup Local
 
 ```bash
+# Instalar dependencias
+npm install --legacy-peer-deps
+
+# Copiar variaveis de ambiente
+cp .env.example .env.local
+# Editar .env.local com suas credenciais
+
+# Rodar em desenvolvimento
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Build de producao
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Variaveis de Ambiente
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variavel | Descricao |
+|----------|-----------|
+| `DATABASE_URL` | Connection string PostgreSQL (Supabase) |
+| `AUTH_SECRET` | Secret para NextAuth (gerar com `openssl rand -base64 32`) |
+| `AUTH_URL` | URL da aplicacao |
+| `STRIPE_SECRET_KEY` | Chave secreta do Stripe |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Chave publica do Stripe |
+| `RESEND_API_KEY` | API key do Resend para envio de emails |
+| `CRON_SECRET` | Secret para proteger endpoints de cron |
+| `NEXT_PUBLIC_APP_URL` | URL publica da aplicacao |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Estrutura de Rotas
 
-## Learn More
+### Publicas
+- `/login` - Login
+- `/checkout/[hash]` - Checkout publico
+- `/obrigado/[transactionId]` - Pagina de obrigado
 
-To learn more about Next.js, take a look at the following resources:
+### Dashboard (Infoprodutor)
+- `/dashboard` - KPIs, graficos, vendas recentes
+- `/dashboard/products` - CRUD de produtos
+- `/dashboard/sales` - Lista de vendas + reembolso
+- `/dashboard/coupons` - CRUD de cupons
+- `/dashboard/settings` - Gateways, webhooks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Admin
+- `/admin` - KPIs globais, top sellers
+- `/admin/users` - Gerenciamento de usuarios
+- `/admin/reports` - Relatorios por gateway/metodo/produto
+- `/admin/settings` - Config da plataforma
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Area de Membros (Aluno)
+- `/member` - Cursos adquiridos
+- `/member/course/[courseId]` - Visualizador de curso (video + modulos)
+- `/member/progress` - Progresso geral
+- `/member/profile` - Perfil do aluno
 
-## Deploy on Vercel
+### APIs
+- `/api/payments/create` - Processar pagamento
+- `/api/payments/status` - Consultar status
+- `/api/payments/refund` - Reembolso
+- `/api/payments/stripe-intent` - Criar Payment Intent (Stripe Elements)
+- `/api/webhooks/[gateway]` - Webhooks dinamicos por gateway
+- `/api/coupons/validate` - Validar cupom
+- `/api/cron/cart-recovery` - Cron de recuperacao de carrinho
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Gateways
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Gateway | PIX | Cartao | Boleto |
+|---------|-----|--------|--------|
+| Mercado Pago | OK | OK | OK |
+| Efi | OK | OK | - |
+| PushinPay | OK | - | - |
+| Beehive | - | OK | - |
+| Hypercash | - | OK | - |
+| Stripe | - | OK (Elements) | - |
+
+## Anti-Chargeback
+
+- **Stripe Radar**: ML automatico (incluso no Stripe)
+- **Validacao interna**: CPF, email descartavel, rate limiting
+- **ClearSale** (opcional): Score de risco para cartao BR
+- Documentacao em `src/lib/anti-chargeback/index.ts`
+
+## Deploy na Vercel
+
+```bash
+# Instalar Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel --prod
+```
+
+Configurar variaveis de ambiente no dashboard da Vercel.
+
+O `vercel.json` ja inclui o cron de cart recovery (a cada 30 min).
+
+## Banco de Dados
+
+24 tabelas no Supabase (PostgreSQL):
+- `users`, `products`, `product_offers`, `order_bumps`, `coupons`
+- `transactions`, `entitlements`, `refunds`
+- `cart_recovery`, `webhook_logs`, `notifications`
+- `courses`, `modules`, `lessons`, `lesson_files`, `student_progress`
+- `saas_config`, `saas_plans`, `saas_subscriptions`, `saas_monthly_counters`
+- `webhooks`, `utmfy_integrations`, `starfy_tracking_products`, `email_queue`
+
+Schema completo em `src/lib/db/schema.ts`.

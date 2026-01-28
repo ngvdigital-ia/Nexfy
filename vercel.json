@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/cart-recovery",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

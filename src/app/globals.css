@@ -3,21 +3,89 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #000000;
+  --foreground: #ededed;
+  --accent: #8B5CF6;
+  --accent-light: #A78BFA;
+  --accent-glow: rgba(139, 92, 246, 0.3);
+  --cta-green: #22C55E;
+  --cta-green-hover: #16A34A;
+  --card-bg: #0A0A0F;
+  --card-border: rgba(139, 92, 246, 0.2);
+  --input-bg: #111118;
+  --input-border: rgba(139, 92, 246, 0.15);
+  --input-focus: rgba(139, 92, 246, 0.5);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Card com glow roxo */
+.card-glow {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  box-shadow:
+    0 0 15px rgba(139, 92, 246, 0.08),
+    inset 0 1px 0 rgba(139, 92, 246, 0.1);
+}
+
+.card-glow:hover {
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow:
+    0 0 25px rgba(139, 92, 246, 0.12),
+    inset 0 1px 0 rgba(139, 92, 246, 0.15);
+}
+
+/* Input com focus roxo */
+.input-glow {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 0.5rem;
+  color: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-glow:focus {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  outline: none;
+}
+
+.input-glow::placeholder {
+  color: #4B5563;
+}
+
+/* Botao CTA verde */
+.btn-cta {
+  background: var(--cta-green);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.btn-cta:hover {
+  background: var(--cta-green-hover);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.btn-cta:active {
+  transform: scale(0.98);
+}
+
+.btn-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Selection accent */
+.method-selected {
+  border-color: var(--accent) !important;
+  background: rgba(139, 92, 246, 0.1) !important;
 }
 
 @layer utilities {
