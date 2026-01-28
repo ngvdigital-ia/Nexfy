@@ -177,8 +177,11 @@ export function CheckoutForm({
     }
   }, [product.price, product.baseCurrency, bumps]);
 
-  // Carregar moeda inicial do cookie
+  // Converter preço na montagem se moeda inicial != moeda base do produto
   useEffect(() => {
+    const baseCurrency = product.baseCurrency || "USD";
+
+    // Ler moeda do cookie (pode diferir do initialCurrency do server)
     const savedCountry = document.cookie
       .split("; ")
       .find((row) => row.startsWith("user_country="))
@@ -189,12 +192,17 @@ export function CheckoutForm({
       .find((row) => row.startsWith("user_currency="))
       ?.split("=")[1] as CurrencyCode | undefined;
 
-    if (savedCountry && savedCurrency && savedCurrency in SUPPORTED_CURRENCIES) {
-      if (savedCurrency !== initialCurrency) {
-        handleCountryChange(savedCountry, savedCurrency);
-      }
+    // Determinar moeda efetiva: cookie > initialCurrency
+    const effectiveCountry = savedCountry || initialCountry;
+    const effectiveCurrency = (savedCurrency && savedCurrency in SUPPORTED_CURRENCIES)
+      ? savedCurrency
+      : initialCurrency;
+
+    // Sempre converter se a moeda efetiva difere da moeda base
+    if (effectiveCurrency !== baseCurrency) {
+      handleCountryChange(effectiveCountry, effectiveCurrency);
     }
-  }, [initialCurrency, handleCountryChange]);
+  }, []); // Executar apenas na montagem
 
   const formatCPF = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 11);
