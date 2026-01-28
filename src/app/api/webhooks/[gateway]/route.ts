@@ -20,15 +20,7 @@ export async function POST(
     req.headers.get("x-webhook-signature") ||
     "";
 
-  // Para Stripe, verificar assinatura ANTES de responder 200
-  if (gatewayName === "stripe") {
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
-    if (!webhookSecret || !verifyStripeSignature(rawBody, signature, webhookSecret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
-  }
-
-  // Log do webhook imediatamente
+  // Log do webhook imediatamente (ANTES da verificacao de assinatura para debug)
   let log;
   try {
     [log] = await db
@@ -41,6 +33,19 @@ export async function POST(
       .returning();
   } catch {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  // Para Stripe, verificar assinatura
+  if (gatewayName === "stripe") {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+    if (!webhookSecret) {
+      await updateLog(log.id, 401, "STRIPE_WEBHOOK_SECRET not configured");
+      return NextResponse.json({ error: "Webhook secret not configured" }, { status: 401 });
+    }
+    if (!verifyStripeSignature(rawBody, signature, webhookSecret)) {
+      await updateLog(log.id, 401, "Invalid signature");
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
   }
 
   // Responder 200 imediatamente, processar async
