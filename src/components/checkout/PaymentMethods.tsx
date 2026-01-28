@@ -8,6 +8,7 @@ interface Props {
   pixEnabled: boolean;
   cardEnabled: boolean;
   boletoEnabled: boolean;
+  gateway?: string;
 }
 
 const methods: { key: Method; label: string; icon: string; desc: string }[] = [
@@ -16,11 +17,14 @@ const methods: { key: Method; label: string; icon: string; desc: string }[] = [
   { key: "boleto", label: "Boleto", icon: "📄", desc: "Vence em 3 dias" },
 ];
 
-export function PaymentMethods({ selected, onSelect, pixEnabled, cardEnabled, boletoEnabled }: Props) {
+export function PaymentMethods({ selected, onSelect, pixEnabled, cardEnabled, boletoEnabled, gateway }: Props) {
+  // Stripe só suporta cartão - desabilitar PIX e Boleto automaticamente
+  const isStripe = gateway === "stripe";
+
   const enabledMap: Record<Method, boolean> = {
-    pix: pixEnabled,
+    pix: pixEnabled && !isStripe,
     credit_card: cardEnabled,
-    boleto: boletoEnabled,
+    boleto: boletoEnabled && !isStripe,
   };
 
   const available = methods.filter((m) => enabledMap[m.key]);

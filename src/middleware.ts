@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+// Mapeamento de país para moeda
+const COUNTRY_TO_CURRENCY: Record<string, string> = {
+  US: 'USD', GB: 'GBP', CA: 'CAD', AU: 'AUD',
+  DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', BE: 'EUR', AT: 'EUR', PT: 'EUR', IE: 'EUR',
+  BR: 'BRL', MX: 'MXN', JP: 'JPY', CH: 'CHF', IN: 'INR',
+  AR: 'USD', CL: 'USD', CO: 'USD', PE: 'USD',
+};
+
+const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'BRL', 'MXN', 'JPY', 'CHF', 'INR'];
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -15,17 +25,60 @@ export async function middleware(req: NextRequest) {
     "/api/coupons/validate",
     "/api/cron",
     "/api/auth",
+    "/api/exchange-rates",
+    "/api/convert-price",
+    "/api/geo",
     "/termos",
     "/privacidade",
   ];
 
   const isPublic = publicPaths.some((p) => pathname.startsWith(p)) || pathname === "/";
 
+  // Criar response base
+  let response = NextResponse.next();
+
+  // ========== DETECÇÃO DE PAÍS/MOEDA ==========
+  // Só para rotas de checkout e se não tiver cookie
+  if (pathname.startsWith('/checkout')) {
+    const existingCountry = req.cookies.get('user_country')?.value;
+    const existingCurrency = req.cookies.get('user_currency')?.value;
+
+    if (!existingCountry || !existingCurrency) {
+      // Detectar país via header do Vercel (funciona automaticamente no Vercel)
+      const detectedCountry = req.headers.get('x-vercel-ip-country') ||
+                              req.geo?.country ||
+                              'US';
+
+      // Mapear país para moeda
+      let detectedCurrency = COUNTRY_TO_CURRENCY[detectedCountry] || 'USD';
+
+      // Garantir que a moeda é suportada
+      if (!SUPPORTED_CURRENCIES.includes(detectedCurrency)) {
+        detectedCurrency = 'USD';
+      }
+
+      // Setar cookies com país e moeda detectados
+      response.cookies.set('user_country', detectedCountry, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365, // 1 ano
+        sameSite: 'lax',
+      });
+
+      response.cookies.set('user_currency', detectedCurrency, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      });
+    }
+  }
+  // ========== FIM DETECÇÃO ==========
+
+  // Se é rota pública, permitir acesso
   if (isPublic) {
-    return NextResponse.next();
+    return response;
   }
 
-  // Check JWT token
+  // Check JWT token para rotas protegidas
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET,
@@ -54,7 +107,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

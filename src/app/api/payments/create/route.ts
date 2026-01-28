@@ -213,6 +213,41 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("Payment error:", error);
+
+    // Mensagens amigáveis para erros de credenciais
+    const errorMessage = error instanceof Error ? error.message : "";
+
+    if (errorMessage.includes("accessToken obrigatorio")) {
+      return NextResponse.json(
+        { error: "Gateway Mercado Pago nao configurado. Contate o vendedor." },
+        { status: 500 }
+      );
+    }
+    if (errorMessage.includes("secretKey obrigatoria")) {
+      return NextResponse.json(
+        { error: "Gateway Stripe nao configurado. Contate o vendedor." },
+        { status: 500 }
+      );
+    }
+    if (errorMessage.includes("clientId") || errorMessage.includes("clientSecret") || errorMessage.includes("certificate")) {
+      return NextResponse.json(
+        { error: "Gateway Efi nao configurado corretamente. Contate o vendedor." },
+        { status: 500 }
+      );
+    }
+    if (errorMessage.includes("apiKey obrigatoria") || errorMessage.includes("apiKey obrigatorio")) {
+      return NextResponse.json(
+        { error: "Gateway de pagamento nao configurado. Contate o vendedor." },
+        { status: 500 }
+      );
+    }
+    if (errorMessage.includes("nao suportado")) {
+      return NextResponse.json(
+        { error: "Gateway de pagamento nao disponivel." },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({ error: "Erro interno ao processar pagamento" }, { status: 500 });
   }
 }

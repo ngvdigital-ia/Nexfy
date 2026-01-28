@@ -9,6 +9,7 @@ import {
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
+import { toStripeAmount } from "@/lib/currencies";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
@@ -23,23 +24,35 @@ interface Props {
   loading: boolean;
 }
 
-function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl", loading }: Props) {
+function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd", loading }: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [paymentRequest, setPaymentRequest] = useState<any>(null);
   const [canPaymentRequest, setCanPaymentRequest] = useState(false);
 
+  // Converter amount para centavos baseado na moeda
+  const stripeAmount = toStripeAmount(amount, currency.toUpperCase() as any);
+
+  // Determinar país baseado na moeda para Payment Request
+  const getCountryFromCurrency = (curr: string): string => {
+    const currencyCountry: Record<string, string> = {
+      usd: 'US', eur: 'DE', gbp: 'GB', cad: 'CA', aud: 'AU',
+      brl: 'BR', mxn: 'MX', jpy: 'JP', chf: 'CH', inr: 'IN',
+    };
+    return currencyCountry[curr.toLowerCase()] || 'US';
+  };
+
   // Apple Pay / Google Pay via Payment Request API
   useEffect(() => {
     if (!stripe) return;
 
     const pr = stripe.paymentRequest({
-      country: "BR",
-      currency,
+      country: getCountryFromCurrency(currency),
+      currency: currency.toLowerCase(),
       total: {
         label: "Total",
-        amount: Math.round(amount * 100),
+        amount: stripeAmount,
       },
       requestPayerName: true,
       requestPayerEmail: true,
@@ -61,7 +74,7 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
 
       if (error) {
         ev.complete("fail");
-        onError(error.message || "Erro no pagamento");
+        onError(error.message || "Payment error");
         return;
       }
 
@@ -70,23 +83,22 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
       if (paymentIntent?.status === "requires_action") {
         const { error: confirmError } = await stripe.confirmCardPayment(clientSecret);
         if (confirmError) {
-          onError(confirmError.message || "Erro na confirmacao");
+          onError(confirmError.message || "Confirmation error");
           return;
         }
       }
 
       onSuccess(paymentIntent?.id || "");
     });
-  }, [stripe, amount, currency, clientSecret, onSuccess, onError]);
+  }, [stripe, stripeAmount, currency, clientSecret, onSuccess, onError]);
 
-  async function handleCardSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCardSubmit() {
     if (!stripe || !elements) return;
 
     setProcessing(true);
     const card = elements.getElement(CardElement);
     if (!card) {
-      onError("Elemento de cartao nao encontrado");
+      onError("Card element not found");
       setProcessing(false);
       return;
     }
@@ -96,7 +108,7 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
     });
 
     if (error) {
-      onError(error.message || "Erro ao processar cartao");
+      onError(error.message || "Error processing card");
       setProcessing(false);
       return;
     }
@@ -104,10 +116,21 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
     if (paymentIntent?.status === "succeeded") {
       onSuccess(paymentIntent.id);
     } else {
-      onError("Pagamento nao aprovado. Tente novamente.");
+      onError("Payment not approved. Please try again.");
     }
     setProcessing(false);
   }
+
+  // Formatar preço para exibição
+  const formatAmount = (amt: number, curr: string): string => {
+    const symbols: Record<string, string> = {
+      usd: '$', eur: '€', gbp: '£', cad: 'C$', aud: 'A$',
+      brl: 'R$', mxn: 'MX$', jpy: '¥', chf: 'CHF', inr: '₹',
+    };
+    const symbol = symbols[curr.toLowerCase()] || '$';
+    const isZeroDecimal = curr.toLowerCase() === 'jpy';
+    return `${symbol}${isZeroDecimal ? amt.toFixed(0) : amt.toFixed(2)}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -115,7 +138,7 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
       {canPaymentRequest && paymentRequest && (
         <div className="card-glow p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-            Pagamento rapido
+            Quick payment
           </h2>
           <PaymentRequestButtonElement
             options={{
@@ -131,16 +154,16 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
           />
           <div className="flex items-center gap-3 text-gray-500 text-xs">
             <div className="flex-1 h-px bg-gray-800" />
-            <span>ou pague com cartao</span>
+            <span>or pay with card</span>
             <div className="flex-1 h-px bg-gray-800" />
           </div>
         </div>
       )}
 
       {/* Card Element */}
-      <form onSubmit={handleCardSubmit} className="card-glow p-4 space-y-3">
+      <div className="card-glow p-4 space-y-3">
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-          Dados do cartao
+          Card details
         </h2>
         <div className="p-3 input-glow rounded-lg">
           <CardElement
@@ -159,7 +182,8 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
         </div>
 
         <button
-          type="submit"
+          type="button"
+          onClick={handleCardSubmit}
           disabled={!stripe || processing || loading}
           className="w-full py-3.5 btn-cta text-base disabled:opacity-50"
         >
@@ -169,13 +193,13 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "brl"
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Processando...
+              Processing...
             </span>
           ) : (
-            <>Pagar R$ {amount.toFixed(2)}</>
+            <>Pay {formatAmount(amount, currency)}</>
           )}
         </button>
-      </form>
+      </div>
     </div>
   );
 }

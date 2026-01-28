@@ -11,9 +11,10 @@ interface Props {
   bump: Bump;
   selected: boolean;
   onToggle: () => void;
+  currencySymbol?: string;
 }
 
-export function OrderBump({ bump, selected, onToggle }: Props) {
+export function OrderBump({ bump, selected, onToggle, currencySymbol = "$" }: Props) {
   return (
     <button
       type="button"
@@ -40,7 +41,7 @@ export function OrderBump({ bump, selected, onToggle }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-light)] bg-[rgba(139,92,246,0.2)] px-1.5 py-0.5 rounded">
-              Oferta especial
+              Special offer
             </span>
           </div>
           <p className="text-sm font-semibold text-white">{bump.title}</p>
@@ -48,7 +49,7 @@ export function OrderBump({ bump, selected, onToggle }: Props) {
             <p className="text-xs text-gray-400 mt-0.5">{bump.description}</p>
           )}
           <p className="text-sm font-bold text-[var(--cta-green)] mt-1">
-            + R$ {bump.price.toFixed(2)}
+            + {currencySymbol} {bump.price.toFixed(2)}
           </p>
         </div>
       </div>

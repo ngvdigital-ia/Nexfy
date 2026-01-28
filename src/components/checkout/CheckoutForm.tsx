@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { PaymentMethods } from "./PaymentMethods";
 import { CardPayment } from "./CardPayment";
 import { StripePayment } from "./StripePayment";
@@ -8,12 +8,20 @@ import { PixPayment } from "./PixPayment";
 import { OrderBump } from "./OrderBump";
 import { CouponInput } from "./CouponInput";
 import { CountdownTimer } from "./CountdownTimer";
+import { CountrySelector } from "./CountrySelector";
+import {
+  SUPPORTED_CURRENCIES,
+  type CurrencyCode,
+  formatDisplayPrice,
+  toStripeAmount,
+} from "@/lib/currencies";
 
 interface Product {
   id: number;
   hash: string;
   name: string;
-  price: number;
+  price: number; // Preço base em USD
+  baseCurrency: CurrencyCode; // Moeda base do preço
   pixEnabled: boolean;
   cardEnabled: boolean;
   boletoEnabled: boolean;
@@ -45,19 +53,44 @@ interface Props {
   offer: { hash: string; price: number } | null;
   bumps: Bump[];
   utm: UTM;
+  initialCountry?: string;
+  initialCurrency?: CurrencyCode;
 }
 
 type PaymentMethod = "pix" | "credit_card" | "boleto";
 
-export function CheckoutForm({ product, offer, bumps, utm }: Props) {
-  const [method, setMethod] = useState<PaymentMethod>(
-    product.pixEnabled ? "pix" : product.cardEnabled ? "credit_card" : "boleto"
-  );
+export function CheckoutForm({
+  product,
+  offer,
+  bumps,
+  utm,
+  initialCountry = "US",
+  initialCurrency = "USD",
+}: Props) {
+  // Stripe só suporta cartão - forçar credit_card como padrão
+  const isStripeGateway = product.gateway === "stripe";
+  const defaultMethod: PaymentMethod = isStripeGateway
+    ? "credit_card"
+    : product.pixEnabled
+      ? "pix"
+      : product.cardEnabled
+        ? "credit_card"
+        : "boleto";
+
+  const [method, setMethod] = useState<PaymentMethod>(defaultMethod);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedBumps, setSelectedBumps] = useState<number[]>([]);
   const [discount, setDiscount] = useState(0);
   const [couponCode, setCouponCode] = useState("");
+
+  // Multi-moeda
+  const [userCountry, setUserCountry] = useState(initialCountry);
+  const [userCurrency, setUserCurrency] = useState<CurrencyCode>(initialCurrency);
+  const [convertedPrice, setConvertedPrice] = useState(product.price);
+  const [convertedBumps, setConvertedBumps] = useState<Record<number, number>>({});
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [isLoadingPrice, setIsLoadingPrice] = useState(false);
 
   const [result, setResult] = useState<{
     transactionId: number;
@@ -86,11 +119,82 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
   const [stripeTransactionId, setStripeTransactionId] = useState<number | null>(null);
   const isStripe = product.gateway === "stripe";
 
+  // Calcular totais com conversão
   const bumpTotal = bumps
     .filter((b) => selectedBumps.includes(b.id))
-    .reduce((sum, b) => sum + b.price, 0);
+    .reduce((sum, b) => sum + (convertedBumps[b.id] || b.price * exchangeRate), 0);
 
-  const totalPrice = Math.max(0, product.price - discount + bumpTotal);
+  const convertedDiscount = discount * exchangeRate;
+  const totalPrice = Math.max(0, convertedPrice - convertedDiscount + bumpTotal);
+
+  // Converter preço quando muda a moeda
+  const handleCountryChange = useCallback(async (country: string, currency: CurrencyCode) => {
+    setUserCountry(country);
+    setUserCurrency(currency);
+
+    const baseCurrency = product.baseCurrency || "USD";
+
+    if (currency === baseCurrency) {
+      setConvertedPrice(product.price);
+      setExchangeRate(1);
+      // Reset bump prices
+      const bumpPrices: Record<number, number> = {};
+      bumps.forEach((b) => { bumpPrices[b.id] = b.price; });
+      setConvertedBumps(bumpPrices);
+      return;
+    }
+
+    setIsLoadingPrice(true);
+
+    try {
+      const response = await fetch("/api/convert-price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: product.price,
+          fromCurrency: baseCurrency,
+          toCurrency: currency,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setConvertedPrice(data.convertedAmount);
+        setExchangeRate(data.rate);
+
+        // Converter preços dos bumps
+        const bumpPrices: Record<number, number> = {};
+        for (const bump of bumps) {
+          bumpPrices[bump.id] = Math.round(bump.price * data.rate * 100) / 100;
+        }
+        setConvertedBumps(bumpPrices);
+      }
+    } catch (error) {
+      console.error("Failed to convert price:", error);
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  }, [product.price, product.baseCurrency, bumps]);
+
+  // Carregar moeda inicial do cookie
+  useEffect(() => {
+    const savedCountry = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("user_country="))
+      ?.split("=")[1];
+
+    const savedCurrency = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("user_currency="))
+      ?.split("=")[1] as CurrencyCode | undefined;
+
+    if (savedCountry && savedCurrency && savedCurrency in SUPPORTED_CURRENCIES) {
+      if (savedCurrency !== initialCurrency) {
+        handleCountryChange(savedCountry, savedCurrency);
+      }
+    }
+  }, [initialCurrency, handleCountryChange]);
 
   const formatCPF = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -132,6 +236,10 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
           couponCode: couponCode || undefined,
           orderBumpIds: selectedBumps.length ? selectedBumps : undefined,
           customer: { name, email, cpf: cpf.replace(/\D/g, ""), phone: phone.replace(/\D/g, "") },
+          currency: userCurrency.toLowerCase(),
+          country: userCountry,
+          convertedAmount: totalPrice,
+          exchangeRate,
           ...utm,
         }),
       });
@@ -181,6 +289,8 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
         },
         couponCode: couponCode || undefined,
         orderBumpIds: selectedBumps.length ? selectedBumps : undefined,
+        currency: userCurrency.toLowerCase(),
+        country: userCountry,
         ...utm,
       };
 
@@ -227,7 +337,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
     if (product.facebookPixelId && typeof window !== "undefined" && (window as any).fbq) {
       (window as any).fbq("track", "Purchase", {
         value: totalPrice,
-        currency: "BRL",
+        currency: userCurrency,
         content_ids: [product.id],
         content_type: "product",
       });
@@ -236,10 +346,13 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
       (window as any).gtag("event", "purchase", {
         transaction_id: transactionId,
         value: totalPrice,
-        currency: "BRL",
+        currency: userCurrency,
       });
     }
   }
+
+  // Obter símbolo da moeda
+  const currencySymbol = SUPPORTED_CURRENCIES[userCurrency]?.symbol || "$";
 
   // PIX pendente
   if (result && method === "pix" && result.pixCode) {
@@ -267,15 +380,27 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <CountdownTimer minutes={15} />
 
+      {/* Seletor de País/Moeda */}
+      <div className="card-glow p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Your location:</span>
+          <CountrySelector
+            initialCountry={userCountry}
+            initialCurrency={userCurrency}
+            onCountryChange={handleCountryChange}
+          />
+        </div>
+      </div>
+
       {/* Dados pessoais */}
       <div className="card-glow p-4 space-y-3">
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-          Seus dados
+          Your details
         </h2>
 
         <input
           type="text"
-          placeholder="Nome completo"
+          placeholder="Full name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -284,7 +409,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
 
         <input
           type="email"
-          placeholder="Seu melhor e-mail"
+          placeholder="Your best email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -294,7 +419,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
         <div className="grid grid-cols-2 gap-3">
           <input
             type="text"
-            placeholder="CPF"
+            placeholder="Tax ID / CPF"
             value={cpf}
             onChange={(e) => setCpf(formatCPF(e.target.value))}
             required
@@ -303,7 +428,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
           />
           <input
             type="text"
-            placeholder="Telefone"
+            placeholder="Phone"
             value={phone}
             onChange={(e) => setPhone(formatPhone(e.target.value))}
             className="w-full px-3 py-2.5 input-glow text-sm"
@@ -318,6 +443,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
         pixEnabled={product.pixEnabled}
         cardEnabled={product.cardEnabled}
         boletoEnabled={product.boletoEnabled}
+        gateway={product.gateway}
       />
 
       {/* Stripe Payment (Card + Apple/Google Pay) */}
@@ -325,6 +451,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
         <StripePayment
           clientSecret={stripeClientSecret}
           amount={totalPrice}
+          currency={userCurrency.toLowerCase()}
           loading={loading}
           onSuccess={() => {
             trackPurchase(stripeTransactionId || 0);
@@ -340,7 +467,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
           disabled={loading || !name || !email || !cpf}
           className="w-full py-3 bg-[var(--accent)] hover:bg-[var(--accent-light)] disabled:opacity-50 text-white rounded-xl font-medium transition-colors"
         >
-          {loading ? "Preparando..." : "Continuar para pagamento"}
+          {loading ? "Preparing..." : "Continue to payment"}
         </button>
       )}
       {method === "credit_card" && !isStripe && (
@@ -360,9 +487,13 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
           {bumps.map((bump) => (
             <OrderBump
               key={bump.id}
-              bump={bump}
+              bump={{
+                ...bump,
+                price: convertedBumps[bump.id] || bump.price,
+              }}
               selected={selectedBumps.includes(bump.id)}
               onToggle={() => toggleBump(bump.id)}
+              currencySymbol={currencySymbol}
             />
           ))}
         </div>
@@ -378,31 +509,46 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
       <div className="card-glow p-4">
         <div className="flex justify-between text-sm text-gray-400">
           <span>{product.name}</span>
-          <span>R$ {product.price.toFixed(2)}</span>
+          {isLoadingPrice ? (
+            <span className="animate-pulse bg-gray-700 h-4 w-16 rounded"></span>
+          ) : (
+            <span>{formatDisplayPrice(convertedPrice, userCurrency)}</span>
+          )}
         </div>
 
         {bumpTotal > 0 && (
           <div className="flex justify-between text-sm text-gray-400 mt-1">
             <span>Extras</span>
-            <span>+ R$ {bumpTotal.toFixed(2)}</span>
+            <span>+ {formatDisplayPrice(bumpTotal, userCurrency)}</span>
           </div>
         )}
 
         {discount > 0 && (
           <div className="flex justify-between text-sm text-[var(--cta-green)] mt-1">
-            <span>Desconto</span>
-            <span>- R$ {discount.toFixed(2)}</span>
+            <span>Discount</span>
+            <span>- {formatDisplayPrice(convertedDiscount, userCurrency)}</span>
           </div>
         )}
 
         <div className="flex justify-between text-white font-bold mt-3 pt-3 border-t border-[rgba(139,92,246,0.2)]">
           <span>Total</span>
-          <span>R$ {totalPrice.toFixed(2)}</span>
+          {isLoadingPrice ? (
+            <span className="animate-pulse bg-gray-700 h-6 w-24 rounded"></span>
+          ) : (
+            <span>{formatDisplayPrice(totalPrice, userCurrency)}</span>
+          )}
         </div>
 
         {method === "credit_card" && installments > 1 && (
           <p className="text-xs text-gray-500 mt-1 text-right">
-            {installments}x de R$ {(totalPrice / installments).toFixed(2)}
+            {installments}x of {formatDisplayPrice(totalPrice / installments, userCurrency)}
+          </p>
+        )}
+
+        {/* Mostrar preço original se convertido */}
+        {userCurrency !== (product.baseCurrency || "USD") && !isLoadingPrice && (
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            ≈ {formatDisplayPrice(product.price, product.baseCurrency || "USD")}
           </p>
         )}
       </div>
@@ -418,7 +564,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
       {!(method === "credit_card" && isStripe && stripeClientSecret) && (
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || isLoadingPrice}
           className="w-full py-3.5 btn-cta text-base"
         >
           {loading ? (
@@ -427,11 +573,11 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Processando...
+              Processing...
             </span>
           ) : (
             <>
-              {product.buttonText} - R$ {totalPrice.toFixed(2)}
+              {product.buttonText} - {formatDisplayPrice(totalPrice, userCurrency)}
             </>
           )}
         </button>
@@ -442,7 +588,7 @@ export function CheckoutForm({ product, offer, bumps, utm }: Props) {
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
-        Pagamento 100% seguro e criptografado
+        100% secure encrypted payment
       </div>
     </form>
   );

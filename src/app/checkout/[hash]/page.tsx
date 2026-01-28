@@ -1,8 +1,10 @@
 import { eq, and } from "drizzle-orm";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { products, productOffers, orderBumps } from "@/lib/db/schema";
 import { notFound } from "next/navigation";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
+import { getCurrencyFromCountry, type CurrencyCode } from "@/lib/currencies";
 import type { Metadata } from "next";
 
 interface Props {
@@ -20,7 +22,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!product) return { title: "Checkout" };
 
   return {
-    title: product.checkoutTitle || `Comprar ${product.name}`,
+    title: product.checkoutTitle || `Buy ${product.name}`,
     description: product.checkoutDescription || product.description || "",
   };
 }
@@ -63,6 +65,17 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
     utmTerm: searchParams.utm_term || "",
   };
 
+  // Pegar país/moeda dos cookies (setados pelo middleware)
+  const cookieStore = cookies();
+  const userCountry = cookieStore.get("user_country")?.value || "US";
+  const savedCurrency = cookieStore.get("user_currency")?.value;
+
+  // Validar que a moeda é suportada
+  const validCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "BRL", "MXN", "JPY", "CHF", "INR"];
+  const userCurrency: CurrencyCode = (savedCurrency && validCurrencies.includes(savedCurrency))
+    ? savedCurrency as CurrencyCode
+    : getCurrencyFromCountry(userCountry);
+
   return (
     <>
       {/* Tracking pixels */}
@@ -77,7 +90,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
               fbq('init','${product.facebookPixelId}');
               fbq('track','PageView');
-              fbq('track','InitiateCheckout',{value:${price},currency:'BRL'});
+              fbq('track','InitiateCheckout',{value:${price},currency:'USD'});
             `,
           }}
         />
@@ -90,7 +103,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               __html: `
                 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
                 gtag('js',new Date());gtag('config','${product.googleAnalyticsId}');
-                gtag('event','begin_checkout',{value:${price},currency:'BRL'});
+                gtag('event','begin_checkout',{value:${price},currency:'USD'});
               `,
             }}
           />
@@ -126,15 +139,17 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               id: product.id,
               hash: product.hash,
               name: product.name,
-              price,
+              price, // Preço base em USD
+              baseCurrency: "USD", // Moeda base do preço
               pixEnabled: product.pixEnabled ?? true,
               cardEnabled: product.cardEnabled ?? true,
               boletoEnabled: product.boletoEnabled ?? false,
               maxInstallments: product.maxInstallments ?? 12,
               buttonColor: product.checkoutButtonColor || "#3b82f6",
-              buttonText: product.checkoutButtonText || "Finalizar compra",
+              buttonText: product.checkoutButtonText || "Complete Purchase",
               facebookPixelId: product.facebookPixelId,
               googleAnalyticsId: product.googleAnalyticsId,
+              gateway: product.gateway || "mercadopago",
             }}
             offer={selectedOffer ? { hash: selectedOffer.hash, price: Number(selectedOffer.price) } : null}
             bumps={bumps.map((b) => ({
@@ -144,6 +159,8 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               price: Number(b.price),
             }))}
             utm={utm}
+            initialCountry={userCountry}
+            initialCurrency={userCurrency}
           />
         </div>
       </div>

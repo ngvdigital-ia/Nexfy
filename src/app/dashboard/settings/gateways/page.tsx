@@ -96,6 +96,9 @@ export default function GatewaysSettingsPage() {
                 type={field.type || "text"}
                 value={credentials[gw.name]?.[field.key] || ""}
                 onChange={(e) => updateField(gw.name, field.key, e.target.value)}
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
                 placeholder={`Insira ${field.label.toLowerCase()}`}
               />
