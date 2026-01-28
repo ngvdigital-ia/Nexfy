@@ -52,7 +52,7 @@ export function welcomeEmailTemplate({ customerName, productName, accessUrl, log
 
       <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid #374151;">
         <p style="color:#6b7280;font-size:12px;margin:0;">
-          NexFy - Plataforma de Pagamentos
+          RubusPay - Plataforma de Pagamentos
         </p>
       </div>
     </div>

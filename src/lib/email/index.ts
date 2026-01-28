@@ -6,7 +6,7 @@ function getResend() {
   return _resend;
 }
 
-const DEFAULT_FROM = process.env.EMAIL_FROM || "NexFy <noreply@nexfy.com>";
+const DEFAULT_FROM = process.env.EMAIL_FROM || "RubusPay <noreply@rubuspay.com>";
 
 interface SendEmailOptions {
   to: string;

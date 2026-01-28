@@ -194,6 +194,23 @@ async function processWebhook(
         .set({ isActive: false, revokedAt: new Date() })
         .where(eq(entitlements.transactionId, transaction.id));
 
+      // Enviar email de reembolso
+      try {
+        const { sendEmail } = await import("@/lib/email");
+        const { refundEmailTemplate } = await import("@/lib/email/templates/refund");
+        await sendEmail({
+          to: transaction.customerEmail,
+          subject: `Reembolso processado - ${product.name}`,
+          html: refundEmailTemplate({
+            customerName: transaction.customerName || "Cliente",
+            productName: product.name,
+            amount: Number(transaction.amount),
+          }),
+        });
+      } catch (emailErr) {
+        console.error("Refund email error:", emailErr);
+      }
+
       // Atualizar UTMify com status reembolso
       sendSaleToUtmify({
         orderId: String(transaction.id),
