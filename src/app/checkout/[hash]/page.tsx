@@ -139,8 +139,8 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               id: product.id,
               hash: product.hash,
               name: product.name,
-              price, // Preço base em USD
-              baseCurrency: "USD", // Moeda base do preço
+              price,
+              baseCurrency: (product.currency as CurrencyCode) || "USD",
               pixEnabled: product.pixEnabled ?? true,
               cardEnabled: product.cardEnabled ?? true,
               boletoEnabled: product.boletoEnabled ?? false,
