@@ -28,12 +28,18 @@ export async function middleware(req: NextRequest) {
   // Check JWT token
   const token = await getToken({
     req,
-    secret: process.env.AUTH_SECRET
+    secret: process.env.AUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === "production",
   });
+
+  // Debug: log token status
+  console.log("Middleware - Path:", pathname, "Token:", token ? "exists" : "null");
 
   // No token = redirect to login
   if (!token) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   const role = token.role as string;
