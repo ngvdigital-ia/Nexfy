@@ -17,6 +17,17 @@ export async function GET() {
     .where(eq(utmfyIntegrations.userId, userId))
     .limit(1);
 
+  // Se não tem no banco mas tem env var, mostrar como fallback
+  if (!utmfy && process.env.UTMIFY_API_KEY) {
+    return NextResponse.json({
+      utmfy: {
+        apiToken: process.env.UTMIFY_API_KEY,
+        isActive: true,
+        source: "env",
+      },
+    });
+  }
+
   return NextResponse.json({ utmfy: utmfy || null });
 }
 
