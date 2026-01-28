@@ -1,55 +1,61 @@
-import { auth } from "@/lib/auth/config";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export default auth((req) => {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const user = req.auth?.user as any;
 
-  // Public routes
-  if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/checkout") ||
-    pathname.startsWith("/obrigado") ||
-    pathname.startsWith("/api/webhooks") ||
-    pathname.startsWith("/api/payments/create") ||
-    pathname.startsWith("/api/payments/status") ||
-    pathname.startsWith("/api/payments/stripe-intent") ||
-    pathname.startsWith("/api/coupons/validate") ||
-    pathname.startsWith("/api/cron")
-  ) {
+  // Public routes - no auth needed
+  const publicPaths = [
+    "/login",
+    "/checkout",
+    "/obrigado",
+    "/api/webhooks",
+    "/api/payments",
+    "/api/coupons/validate",
+    "/api/cron",
+    "/api/auth",
+    "/termos",
+    "/privacidade",
+  ];
+
+  const isPublic = publicPaths.some((p) => pathname.startsWith(p)) || pathname === "/";
+
+  if (isPublic) {
     return NextResponse.next();
   }
 
-  // Protected routes - require auth
-  if (!user) {
+  // Check JWT token
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET
+  });
+
+  // No token = redirect to login
+  if (!token) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
+
+  const role = token.role as string;
 
   // Role-based access
-  if (pathname.startsWith("/admin") && user.role !== "admin") {
+  if (pathname.startsWith("/admin") && role !== "admin") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (pathname.startsWith("/dashboard") && !["admin", "producer"].includes(user.role)) {
+  if (pathname.startsWith("/dashboard") && !["admin", "producer"].includes(role)) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (pathname.startsWith("/member") && !["admin", "customer"].includes(user.role)) {
+  if (pathname.startsWith("/member") && !["admin", "customer"].includes(role)) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/admin/:path*",
-    "/member/:path*",
-    "/login",
-    "/checkout/:path*",
-    "/obrigado/:path*",
-    "/api/webhooks/:path*",
-    "/api/payments/:path*",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$).*)",
   ],
 };
