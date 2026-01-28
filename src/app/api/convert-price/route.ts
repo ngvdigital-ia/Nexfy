@@ -1,5 +1,37 @@
 import { NextResponse } from "next/server";
 
+const EXCHANGE_API = "https://latest.currency-api.pages.dev/v1/currencies";
+
+// Taxas de fallback caso a API falhe
+const FALLBACK_RATES_FROM_USD: Record<string, number> = {
+  usd: 1, eur: 0.92, gbp: 0.79, cad: 1.36, aud: 1.53,
+  brl: 4.97, mxn: 17.15, jpy: 148.5, chf: 0.88, inr: 83.1,
+};
+
+async function getRate(from: string, to: string): Promise<number> {
+  const fromLower = from.toLowerCase();
+  const toLower = to.toLowerCase();
+
+  try {
+    const response = await fetch(`${EXCHANGE_API}/${fromLower}.json`, {
+      next: { revalidate: 3600 },
+    });
+
+    if (!response.ok) throw new Error("API failed");
+
+    const data = await response.json();
+    const rates = data[fromLower];
+    if (rates && rates[toLower]) return rates[toLower];
+
+    throw new Error("Rate not found");
+  } catch {
+    // Fallback: calcular a partir de USD
+    const fromRate = FALLBACK_RATES_FROM_USD[fromLower] || 1;
+    const toRate = FALLBACK_RATES_FROM_USD[toLower] || 1;
+    return toRate / fromRate;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { amount, fromCurrency, toCurrency } = await request.json();
@@ -14,7 +46,6 @@ export async function POST(request: Request) {
     const from = fromCurrency.toUpperCase();
     const to = toCurrency.toUpperCase();
 
-    // Se mesma moeda, retornar valor original
     if (from === to) {
       return NextResponse.json({
         success: true,
@@ -26,33 +57,9 @@ export async function POST(request: Request) {
       });
     }
 
-    // Buscar taxa de câmbio
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
-                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                    'http://localhost:3000';
+    const rate = await getRate(from, to);
 
-    const ratesResponse = await fetch(
-      `${baseUrl}/api/exchange-rates?base=${fromCurrency.toLowerCase()}`,
-      { cache: 'no-store' }
-    );
-
-    const ratesData = await ratesResponse.json();
-
-    if (!ratesData.success) {
-      throw new Error("Failed to get exchange rates");
-    }
-
-    const rate = ratesData.rates[toCurrency.toLowerCase()];
-
-    if (!rate) {
-      return NextResponse.json(
-        { error: `Currency ${toCurrency} not supported` },
-        { status: 400 }
-      );
-    }
-
-    // Converter e arredondar para 2 casas decimais (ou 0 para JPY)
-    const isZeroDecimal = to === 'JPY';
+    const isZeroDecimal = to === "JPY";
     const convertedAmount = isZeroDecimal
       ? Math.round(amount * rate)
       : Math.round(amount * rate * 100) / 100;
