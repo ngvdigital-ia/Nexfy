@@ -128,10 +128,12 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
 
     if (error) {
       // Detectar erro de moeda (cartao BR + moeda estrangeira)
+      const msg = (error.message || "").toLowerCase();
       const isCurrencyError =
-        error.code === "card_not_supported" &&
-        (error.message?.toLowerCase().includes("currency") ||
-         error.message?.toLowerCase().includes("brl"));
+        error.code === "card_not_supported" ||
+        msg.includes("not supported for this currency") ||
+        msg.includes("brazilian cards in brl") ||
+        (error as any).decline_code === "card_not_supported";
 
       if (isCurrencyError && currency.toLowerCase() !== "brl" && onCurrencyError) {
         onCurrencyError();

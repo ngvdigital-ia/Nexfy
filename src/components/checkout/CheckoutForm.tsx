@@ -520,19 +520,39 @@ export function CheckoutForm({
       />
 
       {/* Stripe Payment (Card + Apple/Google Pay) */}
-      {method === "credit_card" && isStripe && stripeClientSecret && (
-        <StripePayment
-          clientSecret={stripeClientSecret}
-          amount={stripeAmount || totalPrice}
-          currency={stripeCurrency || userCurrency.toLowerCase()}
-          loading={loading || isRetryingBRL}
-          onSuccess={() => {
-            trackPurchase(stripeTransactionId || 0);
-            window.location.href = `/obrigado/${stripeTransactionId}`;
-          }}
-          onError={(msg) => setError(msg)}
-          onCurrencyError={retryStripeInBRL}
-        />
+      {method === "credit_card" && isStripe && isRetryingBRL && (
+        <div className="card-glow p-4 text-center space-y-3">
+          <svg className="animate-spin h-8 w-8 mx-auto text-purple-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-amber-300 text-sm font-medium">Brazilian card detected</p>
+          <p className="text-gray-400 text-xs">Converting to BRL and creating new payment...</p>
+        </div>
+      )}
+      {method === "credit_card" && isStripe && stripeClientSecret && !isRetryingBRL && (
+        <>
+          {stripeCurrency === "brl" && userCurrency !== "BRL" && (
+            <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+              <p className="text-green-300 text-sm font-medium">Converted to BRL</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Your Brazilian card requires payment in BRL. The amount was converted automatically. Please enter your card details again.
+              </p>
+            </div>
+          )}
+          <StripePayment
+            clientSecret={stripeClientSecret}
+            amount={stripeAmount || totalPrice}
+            currency={stripeCurrency || userCurrency.toLowerCase()}
+            loading={loading}
+            onSuccess={() => {
+              trackPurchase(stripeTransactionId || 0);
+              window.location.href = `/obrigado/${stripeTransactionId}`;
+            }}
+            onError={(msg) => setError(msg)}
+            onCurrencyError={retryStripeInBRL}
+          />
+        </>
       )}
       {method === "credit_card" && isStripe && !stripeClientSecret && (
         <button
