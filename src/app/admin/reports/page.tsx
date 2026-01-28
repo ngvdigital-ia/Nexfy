@@ -55,7 +55,7 @@ export default async function ReportsPage({ searchParams }: Props) {
     .innerJoin(users, eq(products.userId, users.id))
     .where(sql`${transactions.createdAt} >= ${fromISO}::timestamp AND ${transactions.createdAt} <= ${toISO}::timestamp`)
     .groupBy(products.name, users.name)
-    .orderBy(sql`revenue DESC`)
+    .orderBy(sql`3 DESC`)
     .limit(20);
 
   // Daily breakdown

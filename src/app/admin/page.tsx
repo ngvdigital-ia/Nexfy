@@ -61,7 +61,7 @@ export default async function AdminDashboardPage() {
     .innerJoin(users, eq(products.userId, users.id))
     .where(sql`${transactions.createdAt} >= ${startOfMonthISO}::timestamp`)
     .groupBy(products.userId, users.name, users.email)
-    .orderBy(sql`revenue DESC`)
+    .orderBy(sql`4 DESC`)
     .limit(10);
 
   // Chart data
