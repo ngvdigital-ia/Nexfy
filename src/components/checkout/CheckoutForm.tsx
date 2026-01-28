@@ -117,6 +117,9 @@ export function CheckoutForm({
   // Stripe
   const [stripeClientSecret, setStripeClientSecret] = useState("");
   const [stripeTransactionId, setStripeTransactionId] = useState<number | null>(null);
+  const [stripeCurrency, setStripeCurrency] = useState<string>("");
+  const [stripeAmount, setStripeAmount] = useState<number>(0);
+  const [isRetryingBRL, setIsRetryingBRL] = useState(false);
   const isStripe = product.gateway === "stripe";
 
   // Calcular totais com conversão
@@ -259,10 +262,82 @@ export function CheckoutForm({
       }
       setStripeClientSecret(data.clientSecret);
       setStripeTransactionId(data.transactionId);
+      setStripeCurrency(data.currency || userCurrency.toLowerCase());
+      setStripeAmount(data.amount || totalPrice);
     } catch {
       setError("Erro de conexao.");
     }
     setLoading(false);
+  }
+
+  async function retryStripeInBRL() {
+    setIsRetryingBRL(true);
+    setError("Brazilian card detected. Converting to BRL...");
+    setStripeClientSecret("");
+
+    try {
+      // Converter preco para BRL
+      const baseCurrency = product.baseCurrency || "USD";
+      let brlPrice = product.price;
+      let brlRate = 1;
+
+      if (baseCurrency !== "BRL") {
+        const convRes = await fetch("/api/convert-price", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: product.price,
+            fromCurrency: baseCurrency,
+            toCurrency: "BRL",
+          }),
+        });
+        const convData = await convRes.json();
+        if (convData.success) {
+          brlPrice = convData.convertedAmount;
+          brlRate = convData.rate;
+        }
+      }
+
+      // Recalcular bumps e desconto em BRL
+      const brlBumpTotal = bumps
+        .filter((b) => selectedBumps.includes(b.id))
+        .reduce((sum, b) => sum + Math.round(b.price * brlRate * 100) / 100, 0);
+      const brlDiscount = discount * brlRate;
+      const brlTotal = Math.max(0, brlPrice - brlDiscount + brlBumpTotal);
+
+      // Criar novo intent em BRL
+      const res = await fetch("/api/payments/stripe-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productHash: product.hash,
+          offerHash: offer?.hash,
+          couponCode: couponCode || undefined,
+          orderBumpIds: selectedBumps.length ? selectedBumps : undefined,
+          customer: { name, email, cpf: cpf ? cpf.replace(/\D/g, "") : "", phone: phone.replace(/\D/g, "") },
+          currency: "brl",
+          country: "BR",
+          convertedAmount: brlTotal,
+          exchangeRate: brlRate,
+          ...utm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || "Error creating BRL payment");
+        setIsRetryingBRL(false);
+        return;
+      }
+
+      setStripeClientSecret(data.clientSecret);
+      setStripeTransactionId(data.transactionId);
+      setStripeCurrency("brl");
+      setStripeAmount(data.amount || brlTotal);
+      setError("");
+    } catch {
+      setError("Error converting to BRL.");
+    }
+    setIsRetryingBRL(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -448,14 +523,15 @@ export function CheckoutForm({
       {method === "credit_card" && isStripe && stripeClientSecret && (
         <StripePayment
           clientSecret={stripeClientSecret}
-          amount={totalPrice}
-          currency={userCurrency.toLowerCase()}
-          loading={loading}
+          amount={stripeAmount || totalPrice}
+          currency={stripeCurrency || userCurrency.toLowerCase()}
+          loading={loading || isRetryingBRL}
           onSuccess={() => {
             trackPurchase(stripeTransactionId || 0);
             window.location.href = `/obrigado/${stripeTransactionId}`;
           }}
           onError={(msg) => setError(msg)}
+          onCurrencyError={retryStripeInBRL}
         />
       )}
       {method === "credit_card" && isStripe && !stripeClientSecret && (

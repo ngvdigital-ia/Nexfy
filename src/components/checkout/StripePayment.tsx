@@ -10,27 +10,37 @@ import {
   useElements,
 } from "@stripe/react-stripe-js";
 import { toStripeAmount } from "@/lib/currencies";
+import { getErrorMessage } from "@/lib/stripe-errors";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
 );
 
+interface PaymentError {
+  title: string;
+  message: string;
+  action: string;
+  isRetryable: boolean;
+}
+
 interface Props {
   clientSecret: string;
   onSuccess: (paymentIntentId: string) => void;
   onError: (message: string) => void;
+  onCurrencyError?: () => void;
   amount: number;
   currency?: string;
   loading: boolean;
 }
 
-function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd", loading }: Props) {
+function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading }: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [cardholderName, setCardholderName] = useState("");
   const [paymentRequest, setPaymentRequest] = useState<any>(null);
   const [canPaymentRequest, setCanPaymentRequest] = useState(false);
+  const [paymentError, setPaymentError] = useState<PaymentError | null>(null);
 
   // Converter amount para centavos baseado na moeda
   const stripeAmount = toStripeAmount(amount, currency.toUpperCase() as any);
@@ -117,12 +127,27 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
     });
 
     if (error) {
-      onError(error.message || "Error processing card");
+      // Detectar erro de moeda (cartao BR + moeda estrangeira)
+      const isCurrencyError =
+        error.code === "card_not_supported" &&
+        (error.message?.toLowerCase().includes("currency") ||
+         error.message?.toLowerCase().includes("brl"));
+
+      if (isCurrencyError && currency.toLowerCase() !== "brl" && onCurrencyError) {
+        onCurrencyError();
+        setProcessing(false);
+        return;
+      }
+
+      const errorInfo = getErrorMessage(error.code || (error as any).decline_code);
+      setPaymentError(errorInfo);
+      onError(errorInfo.message);
       setProcessing(false);
       return;
     }
 
     if (paymentIntent?.status === "succeeded") {
+      setPaymentError(null);
       onSuccess(paymentIntent.id);
     } else {
       onError("Payment not approved. Please try again.");
@@ -143,6 +168,16 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
 
   return (
     <div className="space-y-4">
+      {/* Aviso para cartoes brasileiros */}
+      {currency.toLowerCase() !== "brl" && (
+        <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
+          <p className="text-amber-300 text-sm font-medium">Brazilian card?</p>
+          <p className="text-gray-400 text-xs mt-1">
+            Brazilian cards only accept payments in BRL. If you use a Brazilian card, we will automatically convert and retry.
+          </p>
+        </div>
+      )}
+
       {/* Apple Pay / Google Pay */}
       {canPaymentRequest && paymentRequest && (
         <div className="card-glow p-4 space-y-3">
@@ -198,6 +233,28 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
           />
         </div>
 
+        {paymentError && (
+          <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-red-500 text-lg mt-0.5">!</span>
+              <div className="flex-1">
+                <h4 className="text-red-400 font-semibold text-sm">{paymentError.title}</h4>
+                <p className="text-gray-300 text-sm mt-1">{paymentError.message}</p>
+                <p className="text-gray-400 text-xs mt-2">{paymentError.action}</p>
+                {paymentError.isRetryable && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentError(null)}
+                    className="mt-2 text-xs text-purple-400 hover:text-purple-300"
+                  >
+                    Tentar novamente
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleCardSubmit}
@@ -224,6 +281,7 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
 export function StripePayment(props: Props) {
   return (
     <Elements
+      key={props.clientSecret}
       stripe={stripePromise}
       options={{
         clientSecret: props.clientSecret,
