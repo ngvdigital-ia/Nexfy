@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
         customerName: data.customer.name,
         customerEmail: data.customer.email,
         customerPhone: data.customer.phone,
-        customerCpf: data.customer.cpf.replace(/\D/g, ""),
+        customerCpf: (data.customer.cpf || "").replace(/\D/g, ""),
         installments: data.installments || 1,
         utmSource: data.utmSource,
         utmMedium: data.utmMedium,
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       customer: {
         name: data.customer.name,
         email: data.customer.email,
-        cpf: data.customer.cpf,
+        cpf: data.customer.cpf || "",
         phone: data.customer.phone,
       },
       card: data.card,

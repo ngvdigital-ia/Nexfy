@@ -21,7 +21,7 @@ function isValidCPF(cpf: string): boolean {
 export const customerSchema = z.object({
   name: z.string().min(3, "Nome obrigatorio"),
   email: z.string().email("Email invalido"),
-  cpf: z.string().refine(isValidCPF, "CPF invalido"),
+  cpf: z.string().optional().default(""),
   phone: z.string().optional(),
 });
 

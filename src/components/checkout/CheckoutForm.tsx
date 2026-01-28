@@ -243,7 +243,7 @@ export function CheckoutForm({
           offerHash: offer?.hash,
           couponCode: couponCode || undefined,
           orderBumpIds: selectedBumps.length ? selectedBumps : undefined,
-          customer: { name, email, cpf: cpf.replace(/\D/g, ""), phone: phone.replace(/\D/g, "") },
+          customer: { name, email, cpf: cpf ? cpf.replace(/\D/g, "") : "", phone: phone.replace(/\D/g, "") },
           currency: userCurrency.toLowerCase(),
           country: userCountry,
           convertedAmount: totalPrice,
@@ -292,7 +292,7 @@ export function CheckoutForm({
         customer: {
           name,
           email,
-          cpf: cpf.replace(/\D/g, ""),
+          cpf: cpf ? cpf.replace(/\D/g, "") : "",
           phone: phone.replace(/\D/g, ""),
         },
         couponCode: couponCode || undefined,
@@ -425,24 +425,13 @@ export function CheckoutForm({
           className="w-full px-3 py-2.5 input-glow text-sm"
         />
 
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            type="text"
-            placeholder="Tax ID / CPF"
-            value={cpf}
-            onChange={(e) => setCpf(formatCPF(e.target.value))}
-            required
-            maxLength={14}
-            className="w-full px-3 py-2.5 input-glow text-sm"
-          />
-          <input
-            type="text"
-            placeholder="Phone"
-            value={phone}
-            onChange={(e) => setPhone(formatPhone(e.target.value))}
-            className="w-full px-3 py-2.5 input-glow text-sm"
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="Phone"
+          value={phone}
+          onChange={(e) => setPhone(formatPhone(e.target.value))}
+          className="w-full px-3 py-2.5 input-glow text-sm"
+        />
       </div>
 
       {/* Metodo de pagamento */}
@@ -473,7 +462,7 @@ export function CheckoutForm({
         <button
           type="button"
           onClick={createStripeIntent}
-          disabled={loading || !name || !email || !cpf}
+          disabled={loading || !name || !email}
           className="w-full py-3 bg-[var(--accent)] hover:bg-[var(--accent-light)] disabled:opacity-50 text-white rounded-xl font-medium transition-colors"
         >
           {loading ? "Preparing..." : "Continue to payment"}
