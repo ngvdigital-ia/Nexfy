@@ -32,9 +32,6 @@ export async function middleware(req: NextRequest) {
     secureCookie: process.env.NODE_ENV === "production",
   });
 
-  // Debug: log token status
-  console.log("Middleware - Path:", pathname, "Token:", token ? "exists" : "null");
-
   // No token = redirect to login
   if (!token) {
     const loginUrl = new URL("/login", req.url);
