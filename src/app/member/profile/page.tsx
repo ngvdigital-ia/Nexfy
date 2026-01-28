@@ -81,6 +81,7 @@ export default function ProfilePage() {
               type="text"
               value={profile.name}
               onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+              autoComplete="name"
               className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-emerald-500 focus:outline-none"
             />
           </div>
@@ -90,15 +91,17 @@ export default function ProfilePage() {
               type="email"
               value={profile.email}
               disabled
+              autoComplete="email"
               className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-500 text-sm"
             />
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Telefone</label>
             <input
-              type="text"
+              type="tel"
               value={profile.phone}
               onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+              autoComplete="tel"
               className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-emerald-500 focus:outline-none"
             />
           </div>
@@ -112,6 +115,7 @@ export default function ProfilePage() {
               type="password"
               value={profile.currentPassword}
               onChange={(e) => setProfile({ ...profile, currentPassword: e.target.value })}
+              autoComplete="current-password"
               className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-emerald-500 focus:outline-none"
             />
           </div>
@@ -121,6 +125,7 @@ export default function ProfilePage() {
               type="password"
               value={profile.newPassword}
               onChange={(e) => setProfile({ ...profile, newPassword: e.target.value })}
+              autoComplete="new-password"
               className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-emerald-500 focus:outline-none"
             />
           </div>
