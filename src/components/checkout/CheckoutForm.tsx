@@ -370,6 +370,7 @@ export function CheckoutForm({
         pixQrCode={result.pixQrCode}
         transactionId={result.transactionId}
         amount={totalPrice}
+        currencySymbol={currencySymbol}
         onApproved={() => {
           trackPurchase(result.transactionId);
           window.location.href = `/obrigado/${result.transactionId}`;
@@ -486,6 +487,7 @@ export function CheckoutForm({
           onInstallmentsChange={setInstallments}
           maxInstallments={product.maxInstallments}
           totalAmount={totalPrice}
+          currencySymbol={currencySymbol}
         />
       )}
 
@@ -511,6 +513,7 @@ export function CheckoutForm({
       <CouponInput
         productHash={product.hash}
         onApplied={handleCouponApplied}
+        currencySymbol={currencySymbol}
       />
 
       {/* Resumo */}

@@ -5,9 +5,10 @@ import { useState } from "react";
 interface Props {
   productHash: string;
   onApplied: (code: string, discount: number) => void;
+  currencySymbol?: string;
 }
 
-export function CouponInput({ productHash, onApplied }: Props) {
+export function CouponInput({ productHash, onApplied, currencySymbol = "R$" }: Props) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +31,7 @@ export function CouponInput({ productHash, onApplied }: Props) {
 
       if (res.ok && data.valid) {
         setStatus("valid");
-        setMessage(`Cupom aplicado: -R$ ${data.discount.toFixed(2)}`);
+        setMessage(`Cupom aplicado: -${currencySymbol} ${data.discount.toFixed(2)}`);
         onApplied(code.trim(), data.discount);
       } else {
         setStatus("invalid");

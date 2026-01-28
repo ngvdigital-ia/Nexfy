@@ -8,9 +8,10 @@ interface Props {
   transactionId: number;
   amount: number;
   onApproved: () => void;
+  currencySymbol?: string;
 }
 
-export function PixPayment({ pixCode, pixQrCode, transactionId, amount, onApproved }: Props) {
+export function PixPayment({ pixCode, pixQrCode, transactionId, amount, onApproved, currencySymbol = "R$" }: Props) {
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<"pending" | "approved" | "expired">("pending");
   const [secondsLeft, setSecondsLeft] = useState(30 * 60);
@@ -99,7 +100,7 @@ export function PixPayment({ pixCode, pixQrCode, transactionId, amount, onApprov
 
       <div className="text-center">
         <p className="text-gray-400 text-xs">Valor</p>
-        <p className="text-xl font-bold text-white">R$ {amount.toFixed(2)}</p>
+        <p className="text-xl font-bold text-white">{currencySymbol} {amount.toFixed(2)}</p>
       </div>
 
       {pixQrCode && (

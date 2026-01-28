@@ -15,6 +15,7 @@ interface Props {
   onInstallmentsChange: (n: number) => void;
   maxInstallments: number;
   totalAmount: number;
+  currencySymbol?: string;
 }
 
 function formatCardNumber(value: string): string {
@@ -39,13 +40,14 @@ export function CardPayment({
   onInstallmentsChange,
   maxInstallments,
   totalAmount,
+  currencySymbol = "R$",
 }: Props) {
   const brand = detectBrand(cardData.number);
 
   const installmentOptions = Array.from({ length: maxInstallments }, (_, i) => {
     const n = i + 1;
     const value = totalAmount / n;
-    return { n, label: n === 1 ? `1x de R$ ${value.toFixed(2)} (sem juros)` : `${n}x de R$ ${value.toFixed(2)}` };
+    return { n, label: n === 1 ? `1x de ${currencySymbol} ${value.toFixed(2)} (sem juros)` : `${n}x de ${currencySymbol} ${value.toFixed(2)}` };
   });
 
   return (
