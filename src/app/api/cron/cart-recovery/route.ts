@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { cartRecovery, products } from "@/lib/db/schema";
-import { eq, and, lt, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { sendEmail } from "@/lib/email";
 import { cartRecoveryEmailTemplate } from "@/lib/email/templates/cart-recovery";
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       and(
         eq(cartRecovery.emailSent, false),
         eq(cartRecovery.recovered, false),
-        lt(cartRecovery.createdAt, thirtyMinAgoISO),
+        sql`${cartRecovery.createdAt} < ${thirtyMinAgoISO}::timestamp`,
         sql`${cartRecovery.createdAt} > ${twentyFourHoursAgoISO}::timestamp`
       )
     )

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { transactions, products, users } from "@/lib/db/schema";
-import { sql, desc, eq, gte, lte, and } from "drizzle-orm";
+import { sql, desc, eq, and } from "drizzle-orm";
 import { ReportsClient } from "./ReportsClient";
 
 interface Props {
@@ -28,7 +28,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       refunded: sql<number>`COUNT(CASE WHEN status = 'refunded' THEN 1 END)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
+    .where(sql`${transactions.createdAt} >= ${fromISO}::timestamp AND ${transactions.createdAt} <= ${toISO}::timestamp`)
     .groupBy(transactions.gateway);
 
   // Revenue by payment method
@@ -39,7 +39,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       count: sql<number>`COUNT(CASE WHEN status = 'approved' THEN 1 END)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
+    .where(sql`${transactions.createdAt} >= ${fromISO}::timestamp AND ${transactions.createdAt} <= ${toISO}::timestamp`)
     .groupBy(transactions.paymentMethod);
 
   // Revenue by product (top 20)
@@ -53,7 +53,7 @@ export default async function ReportsPage({ searchParams }: Props) {
     .from(transactions)
     .innerJoin(products, eq(transactions.productId, products.id))
     .innerJoin(users, eq(products.userId, users.id))
-    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
+    .where(sql`${transactions.createdAt} >= ${fromISO}::timestamp AND ${transactions.createdAt} <= ${toISO}::timestamp`)
     .groupBy(products.name, users.name)
     .orderBy(sql`revenue DESC`)
     .limit(20);
@@ -67,7 +67,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       total: sql<number>`COUNT(*)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
+    .where(sql`${transactions.createdAt} >= ${fromISO}::timestamp AND ${transactions.createdAt} <= ${toISO}::timestamp`)
     .groupBy(sql`TO_CHAR(${transactions.createdAt}, 'YYYY-MM-DD')`)
     .orderBy(sql`TO_CHAR(${transactions.createdAt}, 'YYYY-MM-DD')`);
 

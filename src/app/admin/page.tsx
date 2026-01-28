@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { users, transactions, products } from "@/lib/db/schema";
-import { sql, desc, eq, gte } from "drizzle-orm";
+import { sql, desc, eq } from "drizzle-orm";
 import { KPICards } from "@/components/dashboard/KPICards";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 
@@ -59,7 +59,7 @@ export default async function AdminDashboardPage() {
     .from(transactions)
     .innerJoin(products, eq(transactions.productId, products.id))
     .innerJoin(users, eq(products.userId, users.id))
-    .where(gte(transactions.createdAt, startOfMonthISO))
+    .where(sql`${transactions.createdAt} >= ${startOfMonthISO}::timestamp`)
     .groupBy(products.userId, users.name, users.email)
     .orderBy(sql`revenue DESC`)
     .limit(10);
@@ -72,7 +72,7 @@ export default async function AdminDashboardPage() {
       count: sql<number>`COUNT(CASE WHEN status = 'approved' THEN 1 END)`,
     })
     .from(transactions)
-    .where(gte(transactions.createdAt, thirtyDaysAgoISO))
+    .where(sql`${transactions.createdAt} >= ${thirtyDaysAgoISO}::timestamp`)
     .groupBy(sql`TO_CHAR(${transactions.createdAt}, 'DD/MM'), DATE(${transactions.createdAt})`)
     .orderBy(sql`DATE(${transactions.createdAt})`);
 

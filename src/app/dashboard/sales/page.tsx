@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { transactions, products } from "@/lib/db/schema";
-import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { SalesClient } from "./SalesClient";
 
 interface Props {
@@ -41,9 +41,9 @@ export default async function SalesPage({ searchParams }: Props) {
   const conditions = [sql`${transactions.productId} = ANY(${productIdsArray}::int[])`];
   if (statusFilter) conditions.push(eq(transactions.status, statusFilter as any));
   if (methodFilter) conditions.push(eq(transactions.paymentMethod, methodFilter as any));
-  // Convert Date to ISO string for postgres.js
-  if (dateFrom) conditions.push(gte(transactions.createdAt, new Date(dateFrom).toISOString()));
-  if (dateTo) conditions.push(lte(transactions.createdAt, new Date(dateTo + "T23:59:59").toISOString()));
+  // Convert Date to ISO string for postgres.js using sql template
+  if (dateFrom) conditions.push(sql`${transactions.createdAt} >= ${new Date(dateFrom).toISOString()}::timestamp`);
+  if (dateTo) conditions.push(sql`${transactions.createdAt} <= ${new Date(dateTo + "T23:59:59").toISOString()}::timestamp`);
 
   const sales = await db
     .select({

@@ -13,11 +13,11 @@ export default async function AdminUsersPage() {
       role: users.role,
       isActive: users.isActive,
       createdAt: users.createdAt,
-      productCount: sql<number>`(SELECT COUNT(*) FROM products WHERE products.user_id = ${users.id})`,
+      productCount: sql<number>`(SELECT COUNT(*) FROM products WHERE products.user_id = "users"."id")`,
       revenue: sql<number>`COALESCE((
         SELECT SUM(t.amount) FROM transactions t
         JOIN products p ON t.product_id = p.id
-        WHERE p.user_id = ${users.id} AND t.status = 'approved'
+        WHERE p.user_id = "users"."id" AND t.status = 'approved'
       ), 0)`,
     })
     .from(users)
