@@ -1,8 +1,27 @@
+import { db } from "@/lib/db";
+import { utmfyIntegrations } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
+
 const UTMIFY_API_URL = "https://api.utmify.com.br/api-credentials/orders";
+
+async function getUtmifyToken(userId: number): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select({ apiToken: utmfyIntegrations.apiToken, isActive: utmfyIntegrations.isActive })
+      .from(utmfyIntegrations)
+      .where(and(eq(utmfyIntegrations.userId, userId), eq(utmfyIntegrations.isActive, true)))
+      .limit(1);
+
+    return row?.apiToken || null;
+  } catch (err) {
+    console.error("Erro ao buscar token UTMify:", err);
+    return null;
+  }
+}
 
 /**
  * Envia venda para UTMify.
- * Docs: POST /v1/sales para registrar, PATCH para atualizar status.
+ * Busca o token do banco (por produtor) com fallback para env var.
  */
 export async function sendSaleToUtmify(data: {
   orderId: string;
@@ -27,8 +46,15 @@ export async function sendSaleToUtmify(data: {
     utm_content?: string;
     utm_term?: string;
   };
-}) {
-  const apiKey = process.env.UTMIFY_API_KEY;
+}, options?: { userId?: number }) {
+  // Buscar token do banco por produtor, fallback para env var
+  let apiKey: string | null = null;
+  if (options?.userId) {
+    apiKey = await getUtmifyToken(options.userId);
+  }
+  if (!apiKey) {
+    apiKey = process.env.UTMIFY_API_KEY || null;
+  }
   if (!apiKey) return null;
 
   const statusMap: Record<string, string> = {

@@ -184,7 +184,7 @@ async function processWebhook(
           utm_content: transaction.utmContent || undefined,
           utm_term: transaction.utmTerm || undefined,
         },
-      }).catch((err) => console.error("UTMify sync error:", err));
+      }, { userId: product.userId }).catch((err) => console.error("UTMify sync error:", err));
     }
 
     // Se reembolsado, revogar acesso
@@ -203,7 +203,7 @@ async function processWebhook(
         customerEmail: transaction.customerEmail,
         amount: Number(transaction.amount),
         refundedAt: new Date(),
-      }).catch((err) => console.error("UTMify refund sync error:", err));
+      }, { userId: product.userId }).catch((err) => console.error("UTMify refund sync error:", err));
     }
 
     await updateLog(logId, 200, `Status atualizado: ${transaction.status} -> ${status.status}`);
