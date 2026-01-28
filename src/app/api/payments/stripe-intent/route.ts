@@ -108,7 +108,8 @@ export async function POST(req: NextRequest) {
       body: new URLSearchParams([
         ["amount", String(stripeAmount)],
         ["currency", currency],
-        ["payment_method_types[]", "card"],
+        ["automatic_payment_methods[enabled]", "true"],
+        ["automatic_payment_methods[allow_redirects]", "never"],
         ["description", product.name],
         ["metadata[product_id]", String(product.id)],
         ["metadata[customer_email]", body.customer?.email || ""],
