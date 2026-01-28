@@ -8,12 +8,16 @@ interface Props {
 }
 
 export default async function ReportsPage({ searchParams }: Props) {
-  const from = searchParams.from
+  const fromDate = searchParams.from
     ? new Date(searchParams.from)
     : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const to = searchParams.to
+  const toDate = searchParams.to
     ? new Date(searchParams.to + "T23:59:59")
     : new Date();
+
+  // Convert dates to ISO strings for postgres.js
+  const fromISO = fromDate.toISOString();
+  const toISO = toDate.toISOString();
 
   // Revenue by gateway
   const byGateway = await db
@@ -24,7 +28,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       refunded: sql<number>`COUNT(CASE WHEN status = 'refunded' THEN 1 END)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, from), lte(transactions.createdAt, to)))
+    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
     .groupBy(transactions.gateway);
 
   // Revenue by payment method
@@ -35,7 +39,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       count: sql<number>`COUNT(CASE WHEN status = 'approved' THEN 1 END)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, from), lte(transactions.createdAt, to)))
+    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
     .groupBy(transactions.paymentMethod);
 
   // Revenue by product (top 20)
@@ -49,7 +53,7 @@ export default async function ReportsPage({ searchParams }: Props) {
     .from(transactions)
     .innerJoin(products, eq(transactions.productId, products.id))
     .innerJoin(users, eq(products.userId, users.id))
-    .where(and(gte(transactions.createdAt, from), lte(transactions.createdAt, to)))
+    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
     .groupBy(products.name, users.name)
     .orderBy(sql`revenue DESC`)
     .limit(20);
@@ -63,14 +67,14 @@ export default async function ReportsPage({ searchParams }: Props) {
       total: sql<number>`COUNT(*)`,
     })
     .from(transactions)
-    .where(and(gte(transactions.createdAt, from), lte(transactions.createdAt, to)))
+    .where(and(gte(transactions.createdAt, fromISO), lte(transactions.createdAt, toISO)))
     .groupBy(sql`TO_CHAR(${transactions.createdAt}, 'YYYY-MM-DD')`)
     .orderBy(sql`TO_CHAR(${transactions.createdAt}, 'YYYY-MM-DD')`);
 
   return (
     <ReportsClient
-      from={from.toISOString().split("T")[0]}
-      to={to.toISOString().split("T")[0]}
+      from={fromDate.toISOString().split("T")[0]}
+      to={toDate.toISOString().split("T")[0]}
       byGateway={byGateway.map((g) => ({ ...g, revenue: Number(g.revenue), count: Number(g.count), refunded: Number(g.refunded) }))}
       byMethod={byMethod.map((m) => ({ method: m.method, revenue: Number(m.revenue), count: Number(m.count) }))}
       byProduct={byProduct.map((p) => ({ ...p, revenue: Number(p.revenue), count: Number(p.count) }))}

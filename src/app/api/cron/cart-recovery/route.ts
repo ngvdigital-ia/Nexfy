@@ -15,8 +15,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
 
-  const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Convert dates to ISO strings for postgres.js
+  const thirtyMinAgoISO = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const twentyFourHoursAgoISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const pendingCarts = await db
     .select({
@@ -34,8 +35,8 @@ export async function GET(req: NextRequest) {
       and(
         eq(cartRecovery.emailSent, false),
         eq(cartRecovery.recovered, false),
-        lt(cartRecovery.createdAt, thirtyMinAgo),
-        sql`${cartRecovery.createdAt} > ${twentyFourHoursAgo}`
+        lt(cartRecovery.createdAt, thirtyMinAgoISO),
+        sql`${cartRecovery.createdAt} > ${twentyFourHoursAgoISO}::timestamp`
       )
     )
     .limit(50);

@@ -10,14 +10,19 @@ export default async function AdminDashboardPage() {
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+  // Convert dates to ISO strings for postgres.js
+  const startOfMonthISO = startOfMonth.toISOString();
+  const startOfLastMonthISO = startOfLastMonth.toISOString();
+  const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+
   // Global KPIs
   const [stats] = await db
     .select({
       totalRevenue: sql<number>`COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0)`,
-      monthRevenue: sql<number>`COALESCE(SUM(CASE WHEN status = 'approved' AND created_at >= ${startOfMonth} THEN amount ELSE 0 END), 0)`,
-      lastMonthRevenue: sql<number>`COALESCE(SUM(CASE WHEN status = 'approved' AND created_at >= ${startOfLastMonth} AND created_at < ${startOfMonth} THEN amount ELSE 0 END), 0)`,
+      monthRevenue: sql<number>`COALESCE(SUM(CASE WHEN status = 'approved' AND created_at >= ${startOfMonthISO}::timestamp THEN amount ELSE 0 END), 0)`,
+      lastMonthRevenue: sql<number>`COALESCE(SUM(CASE WHEN status = 'approved' AND created_at >= ${startOfLastMonthISO}::timestamp AND created_at < ${startOfMonthISO}::timestamp THEN amount ELSE 0 END), 0)`,
       totalSales: sql<number>`COUNT(CASE WHEN status = 'approved' THEN 1 END)`,
-      monthSales: sql<number>`COUNT(CASE WHEN status = 'approved' AND created_at >= ${startOfMonth} THEN 1 END)`,
+      monthSales: sql<number>`COUNT(CASE WHEN status = 'approved' AND created_at >= ${startOfMonthISO}::timestamp THEN 1 END)`,
       pendingCount: sql<number>`COUNT(CASE WHEN status = 'pending' THEN 1 END)`,
       refundedCount: sql<number>`COUNT(CASE WHEN status = 'refunded' THEN 1 END)`,
     })
@@ -54,7 +59,7 @@ export default async function AdminDashboardPage() {
     .from(transactions)
     .innerJoin(products, eq(transactions.productId, products.id))
     .innerJoin(users, eq(products.userId, users.id))
-    .where(gte(transactions.createdAt, startOfMonth))
+    .where(gte(transactions.createdAt, startOfMonthISO))
     .groupBy(products.userId, users.name, users.email)
     .orderBy(sql`revenue DESC`)
     .limit(10);
@@ -67,7 +72,7 @@ export default async function AdminDashboardPage() {
       count: sql<number>`COUNT(CASE WHEN status = 'approved' THEN 1 END)`,
     })
     .from(transactions)
-    .where(gte(transactions.createdAt, thirtyDaysAgo))
+    .where(gte(transactions.createdAt, thirtyDaysAgoISO))
     .groupBy(sql`TO_CHAR(${transactions.createdAt}, 'DD/MM'), DATE(${transactions.createdAt})`)
     .orderBy(sql`DATE(${transactions.createdAt})`);
 

@@ -36,11 +36,14 @@ export default async function SalesPage({ searchParams }: Props) {
   const dateFrom = searchParams.from;
   const dateTo = searchParams.to;
 
-  const conditions = [sql`${transactions.productId} = ANY(${productIds})`];
+  // Convert array to postgres array literal for ANY()
+  const productIdsArray = `{${productIds.join(",")}}`;
+  const conditions = [sql`${transactions.productId} = ANY(${productIdsArray}::int[])`];
   if (statusFilter) conditions.push(eq(transactions.status, statusFilter as any));
   if (methodFilter) conditions.push(eq(transactions.paymentMethod, methodFilter as any));
-  if (dateFrom) conditions.push(gte(transactions.createdAt, new Date(dateFrom)));
-  if (dateTo) conditions.push(lte(transactions.createdAt, new Date(dateTo + "T23:59:59")));
+  // Convert Date to ISO string for postgres.js
+  if (dateFrom) conditions.push(gte(transactions.createdAt, new Date(dateFrom).toISOString()));
+  if (dateTo) conditions.push(lte(transactions.createdAt, new Date(dateTo + "T23:59:59").toISOString()));
 
   const sales = await db
     .select({
