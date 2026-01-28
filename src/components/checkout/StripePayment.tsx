@@ -28,6 +28,7 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
+  const [cardholderName, setCardholderName] = useState("");
   const [paymentRequest, setPaymentRequest] = useState<any>(null);
   const [canPaymentRequest, setCanPaymentRequest] = useState(false);
 
@@ -95,6 +96,11 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
   async function handleCardSubmit() {
     if (!stripe || !elements) return;
 
+    if (!cardholderName.trim()) {
+      onError("Enter the name on card");
+      return;
+    }
+
     setProcessing(true);
     const card = elements.getElement(CardElement);
     if (!card) {
@@ -104,7 +110,10 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
     }
 
     const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card },
+      payment_method: {
+        card,
+        billing_details: { name: cardholderName.trim() },
+      },
     });
 
     if (error) {
@@ -165,6 +174,14 @@ function StripeForm({ clientSecret, onSuccess, onError, amount, currency = "usd"
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
           Card details
         </h2>
+        <input
+          type="text"
+          placeholder="Name on card"
+          value={cardholderName}
+          onChange={(e) => setCardholderName(e.target.value.toUpperCase())}
+          autoComplete="cc-name"
+          className="w-full px-4 py-3 input-glow text-sm uppercase"
+        />
         <div className="p-3 input-glow rounded-lg">
           <CardElement
             options={{
