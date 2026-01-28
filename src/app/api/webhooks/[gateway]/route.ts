@@ -6,6 +6,7 @@ import { getGateway } from "@/lib/gateways";
 import type { GatewayCredentials } from "@/lib/gateways/types";
 import { waitUntil } from "@vercel/functions";
 import { sendSaleToUtmify } from "@/lib/utmify";
+import crypto from "crypto";
 
 export async function POST(
   req: NextRequest,
@@ -19,20 +20,56 @@ export async function POST(
     req.headers.get("x-webhook-signature") ||
     "";
 
+  // Para Stripe, verificar assinatura ANTES de responder 200
+  if (gatewayName === "stripe") {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+    if (!webhookSecret || !verifyStripeSignature(rawBody, signature, webhookSecret)) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+  }
+
   // Log do webhook imediatamente
-  const [log] = await db
-    .insert(webhookLogs)
-    .values({
-      gateway: gatewayName,
-      payload: JSON.parse(rawBody),
-      headers: Object.fromEntries(req.headers.entries()),
-    })
-    .returning();
+  let log;
+  try {
+    [log] = await db
+      .insert(webhookLogs)
+      .values({
+        gateway: gatewayName,
+        payload: JSON.parse(rawBody),
+        headers: Object.fromEntries(req.headers.entries()),
+      })
+      .returning();
+  } catch {
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
 
   // Responder 200 imediatamente, processar async
   waitUntil(processWebhook(gatewayName, rawBody, signature, log.id));
 
   return NextResponse.json({ received: true });
+}
+
+function verifyStripeSignature(payload: string, signature: string, secret: string): boolean {
+  try {
+    const parts = signature.split(",");
+    const timestamp = parts.find((p) => p.startsWith("t="))?.split("=")[1];
+    const v1 = parts.find((p) => p.startsWith("v1="))?.split("=")[1];
+    if (!timestamp || !v1) return false;
+
+    // Rejeitar timestamps com mais de 5 minutos de diferença (replay attack)
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - Number(timestamp)) > 300) return false;
+
+    const signedPayload = `${timestamp}.${payload}`;
+    const expectedSig = crypto
+      .createHmac("sha256", secret)
+      .update(signedPayload)
+      .digest("hex");
+
+    return crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(v1));
+  } catch {
+    return false;
+  }
 }
 
 async function processWebhook(
@@ -80,13 +117,21 @@ async function processWebhook(
       return;
     }
 
-    // Verificar assinatura do webhook
+    // Verificar assinatura do webhook (Stripe já verificado na entrada)
     const credentials = (product.gatewayCredentials || {}) as GatewayCredentials;
     const gateway = getGateway(gatewayName, credentials);
 
-    if (!gateway.verifyWebhook(rawBody, signature)) {
-      await updateLog(logId, 401, "Assinatura invalida");
-      return;
+    if (gatewayName === "stripe") {
+      // Se o produto tem webhookSecret próprio, verificar com ele também
+      if (credentials.webhookSecret && !gateway.verifyWebhook(rawBody, signature)) {
+        await updateLog(logId, 401, "Assinatura invalida (credenciais do produto)");
+        return;
+      }
+    } else {
+      if (!gateway.verifyWebhook(rawBody, signature)) {
+        await updateLog(logId, 401, "Assinatura invalida");
+        return;
+      }
     }
 
     // Consultar status atualizado no gateway
