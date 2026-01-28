@@ -72,9 +72,12 @@ export default function IntegrationsPage() {
           <label className="block text-xs text-gray-400 mb-1">API Token</label>
           <input
             type="password"
+            name="utmfy_api_token"
             value={utmfyToken}
             onChange={(e) => setUtmfyToken(e.target.value)}
             autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore
             placeholder="Insira seu token UTMify"
             className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
           />
