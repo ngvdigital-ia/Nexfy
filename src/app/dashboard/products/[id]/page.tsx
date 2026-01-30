@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import BumpsTab from "./BumpsTab";
 
 type Tab = "general" | "checkout" | "payment" | "tracking" | "bumps";
 
@@ -189,17 +190,7 @@ export default function EditProductPage() {
           </div>
         )}
 
-        {tab === "bumps" && (
-          <div className="bg-gray-900/80 border border-gray-800/50 rounded-xl p-4">
-            <p className="text-sm text-gray-400">
-              Gerencie os order bumps em{" "}
-              <a href={`/api/dashboard/products/${id}/bumps`} className="text-blue-400">
-                /api/dashboard/products/{String(id)}/bumps
-              </a>
-            </p>
-            {/* TODO: Componente inline de order bumps */}
-          </div>
-        )}
+        {tab === "bumps" && <BumpsTab productId={String(id)} />}
 
         <button
           type="submit"
