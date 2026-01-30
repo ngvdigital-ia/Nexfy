@@ -59,13 +59,13 @@ function CardIcon({ className }: { className?: string }) {
 
 function GooglePayBadge() {
   return (
-    <img src="/img/gpay.webp" alt="Google Pay" className="h-[25px] w-auto" />
+    <img src="/img/gpay.webp" alt="Google Pay" width="47" height="25" className="h-[25px] w-auto" />
   );
 }
 
 function ApplePayBadge() {
   return (
-    <img src="/img/apple-pay.svg" alt="Apple Pay" className="h-[25px] w-auto" />
+    <img src="/img/apple-pay.svg" alt="Apple Pay" width="42" height="25" className="h-[25px] w-auto" />
   );
 }
 
@@ -257,7 +257,7 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
       {/* Apple Pay - always show availability message (requires Safari + Apple device) */}
       {paymentTab === "apple_pay" && (
         <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-5 text-center">
-          <img src="/img/apple-pay.svg" alt="Apple Pay" className="h-8 mx-auto mb-3 opacity-40" />
+          <img src="/img/apple-pay.svg" alt="Apple Pay" width="54" height="32" className="h-8 mx-auto mb-3 opacity-40" />
           <p className="text-sm text-[#6B7280]">
             Apple Pay is available on Safari with an Apple device.
           </p>

@@ -495,6 +495,9 @@ export function CheckoutForm({
           <img
             src={product.checkoutImage}
             alt={product.name}
+            width="400"
+            height="176"
+            loading="lazy"
             className="max-h-44 object-contain"
           />
         </div>

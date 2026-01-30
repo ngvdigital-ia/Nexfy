@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /api/
+Disallow: /login
+
+Sitemap: https://www.rubuspay.com/sitemap.xml
