@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { PaymentMethods } from "./PaymentMethods";
 import { CardPayment } from "./CardPayment";
 import { PixPayment } from "./PixPayment";
@@ -492,13 +493,14 @@ export function CheckoutForm({
       {/* Product image */}
       {product.checkoutImage && (
         <div className="flex justify-center">
-          <img
+          <Image
             src={product.checkoutImage}
             alt={product.name}
-            width="400"
-            height="176"
-            loading="lazy"
-            className="max-h-44 object-contain"
+            width={400}
+            height={176}
+            className="max-h-44 object-contain w-auto h-auto"
+            sizes="(max-width: 768px) 100vw, 400px"
+            priority={false}
           />
         </div>
       )}
