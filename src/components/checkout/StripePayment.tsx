@@ -1,27 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
-  CardElement,
-  PaymentRequestButtonElement,
+  ExpressCheckoutElement,
+  PaymentElement,
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
-import { toStripeAmount } from "@/lib/currencies";
+import type { StripeExpressCheckoutElementReadyEvent } from "@stripe/stripe-js";
 import { getErrorMessage } from "@/lib/stripe-errors";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
 );
-
-interface PaymentError {
-  title: string;
-  message: string;
-  action: string;
-  isRetryable: boolean;
-}
 
 interface Props {
   clientSecret: string;
@@ -33,239 +26,269 @@ interface Props {
   loading: boolean;
 }
 
+function isCurrencyError(error: any): boolean {
+  const msg = (error?.message || "").toLowerCase();
+  const code = error?.code || "";
+  const declineCode = error?.decline_code || "";
+
+  return (
+    code === "card_not_supported" ||
+    (code === "card_declined" && declineCode === "currency_not_supported") ||
+    declineCode === "card_not_supported" ||
+    declineCode === "currency_not_supported" ||
+    msg.includes("not supported for this currency") ||
+    msg.includes("brazilian cards in brl") ||
+    msg.includes("currency_not_supported")
+  );
+}
+
+type PaymentTab = "card" | "google_pay" | "apple_pay";
+
+/* ── SVG Icons ── */
+
+function CardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="32" height="24" viewBox="0 0 24 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0.5" y="0.5" width="23" height="17" rx="2.5" stroke="currentColor" />
+      <rect x="0" y="4" width="24" height="4" fill="currentColor" />
+      <rect x="3" y="12" width="6" height="2" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function GooglePayBadge() {
+  return (
+    <img src="/img/gpay.webp" alt="Google Pay" className="h-[25px] w-auto" />
+  );
+}
+
+function ApplePayBadge() {
+  return (
+    <img src="/img/apple-pay.svg" alt="Apple Pay" className="h-[25px] w-auto" />
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="8" cy="8" r="8" fill="#22C55E"/>
+      <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading }: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
-  const [cardholderName, setCardholderName] = useState("");
-  const [paymentRequest, setPaymentRequest] = useState<any>(null);
-  const [canPaymentRequest, setCanPaymentRequest] = useState(false);
-  const [paymentError, setPaymentError] = useState<PaymentError | null>(null);
+  const [paymentTab, setPaymentTab] = useState<PaymentTab>("card");
+  const [expressReady, setExpressReady] = useState(false);
+  const [expressAvailable, setExpressAvailable] = useState<{
+    googlePay: boolean;
+    applePay: boolean;
+  }>({ googlePay: false, applePay: false });
 
-  // Converter amount para centavos baseado na moeda
-  const stripeAmount = toStripeAmount(amount, currency.toUpperCase() as any);
-
-  // Determinar país baseado na moeda para Payment Request
-  const getCountryFromCurrency = (curr: string): string => {
-    const currencyCountry: Record<string, string> = {
-      usd: 'US', eur: 'DE', gbp: 'GB', cad: 'CA', aud: 'AU',
-      brl: 'BR', mxn: 'MX', jpy: 'JP', chf: 'CH', inr: 'IN',
-    };
-    return currencyCountry[curr.toLowerCase()] || 'US';
-  };
-
-  // Apple Pay / Google Pay via Payment Request API
-  useEffect(() => {
-    if (!stripe) return;
-
-    const pr = stripe.paymentRequest({
-      country: getCountryFromCurrency(currency),
-      currency: currency.toLowerCase(),
-      total: {
-        label: "Total",
-        amount: stripeAmount,
-      },
-      requestPayerName: true,
-      requestPayerEmail: true,
-    });
-
-    pr.canMakePayment().then((result) => {
-      if (result) {
-        setPaymentRequest(pr);
-        setCanPaymentRequest(true);
-      }
-    });
-
-    pr.on("paymentmethod", async (ev) => {
-      const { error, paymentIntent } = await stripe.confirmCardPayment(
-        clientSecret,
-        { payment_method: ev.paymentMethod.id },
-        { handleActions: false }
-      );
-
-      if (error) {
-        ev.complete("fail");
-        onError(error.message || "Payment error");
-        return;
-      }
-
-      ev.complete("success");
-
-      if (paymentIntent?.status === "requires_action") {
-        const { error: confirmError } = await stripe.confirmCardPayment(clientSecret);
-        if (confirmError) {
-          onError(confirmError.message || "Confirmation error");
-          return;
-        }
-      }
-
-      onSuccess(paymentIntent?.id || "");
-    });
-  }, [stripe, stripeAmount, currency, clientSecret, onSuccess, onError]);
-
-  async function handleCardSubmit() {
+  async function confirmPayment() {
     if (!stripe || !elements) return;
 
-    if (!cardholderName.trim()) {
-      onError("Enter the name on card");
-      return;
-    }
-
     setProcessing(true);
-    const card = elements.getElement(CardElement);
-    if (!card) {
-      onError("Card element not found");
-      setProcessing(false);
-      return;
-    }
 
-    const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: {
-        card,
-        billing_details: { name: cardholderName.trim() },
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/obrigado`,
       },
+      redirect: "if_required",
     });
 
     if (error) {
-      // Detectar erro de moeda (cartao BR + moeda estrangeira)
-      const msg = (error.message || "").toLowerCase();
-      const declineCode = (error as any).decline_code || "";
-      const isCurrencyError =
-        error.code === "card_not_supported" ||
-        error.code === "card_declined" && declineCode === "currency_not_supported" ||
-        msg.includes("not supported for this currency") ||
-        msg.includes("brazilian cards in brl") ||
-        msg.includes("currency_not_supported") ||
-        declineCode === "card_not_supported" ||
-        declineCode === "currency_not_supported";
-
-      if (isCurrencyError && currency.toLowerCase() !== "brl" && onCurrencyError) {
-        onCurrencyError();
+      if (isCurrencyError(error) && onCurrencyError) {
         setProcessing(false);
+        onCurrencyError();
         return;
       }
-
       const errorInfo = getErrorMessage(error.code || (error as any).decline_code);
-      setPaymentError(errorInfo);
       onError(errorInfo.message);
       setProcessing(false);
       return;
     }
 
     if (paymentIntent?.status === "succeeded") {
-      setPaymentError(null);
       onSuccess(paymentIntent.id);
+    } else if (paymentIntent?.status === "requires_action") {
+      const { error: confirmError, paymentIntent: confirmedIntent } =
+        await stripe.confirmPayment({
+          elements,
+          confirmParams: {
+            return_url: `${window.location.origin}/obrigado`,
+          },
+          redirect: "if_required",
+        });
+
+      if (confirmError) {
+        const errorInfo = getErrorMessage(confirmError.code || (confirmError as any).decline_code);
+        onError(errorInfo.message);
+      } else if (confirmedIntent?.status === "succeeded") {
+        onSuccess(confirmedIntent.id);
+      } else {
+        onError("Payment not approved. Please try again.");
+      }
     } else {
       onError("Payment not approved. Please try again.");
     }
+
     setProcessing(false);
   }
 
-  // Formatar preço para exibição
-  const formatAmount = (amt: number, curr: string): string => {
-    const symbols: Record<string, string> = {
-      usd: '$', eur: '€', gbp: '£', cad: 'C$', aud: 'A$',
-      brl: 'R$', mxn: 'MX$', jpy: '¥', chf: 'CHF', inr: '₹',
-    };
-    const symbol = symbols[curr.toLowerCase()] || '$';
-    const isZeroDecimal = curr.toLowerCase() === 'jpy';
-    return `${symbol}${isZeroDecimal ? amt.toFixed(0) : amt.toFixed(2)}`;
-  };
+  async function handleExpressCheckoutConfirm() {
+    await confirmPayment();
+  }
+
+  async function handleCardSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    await confirmPayment();
+  }
+
+  function handleExpressReady(event: StripeExpressCheckoutElementReadyEvent) {
+    const { availablePaymentMethods } = event;
+    if (availablePaymentMethods) {
+      setExpressAvailable({
+        googlePay: !!availablePaymentMethods.googlePay,
+        applePay: !!availablePaymentMethods.applePay,
+      });
+    }
+    setExpressReady(true);
+  }
+
+  const isExpressTab = paymentTab === "google_pay" || paymentTab === "apple_pay";
+
+  const tabs: { id: PaymentTab; label: string; icon: React.ReactNode }[] = [
+    { id: "card", label: "Credit Card", icon: <CardIcon className="w-5 h-[14px]" /> },
+    { id: "google_pay", label: "Google Pay", icon: <GooglePayBadge /> },
+    { id: "apple_pay", label: "Apple Pay", icon: <ApplePayBadge /> },
+  ];
 
   return (
     <div className="space-y-4">
-      {/* Aviso para cartoes brasileiros */}
-      {currency.toLowerCase() !== "brl" && (
-        <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
-          <p className="text-amber-300 text-sm font-medium">Brazilian card?</p>
-          <p className="text-gray-400 text-xs mt-1">
-            Brazilian cards only accept payments in BRL. If you use a Brazilian card, we will automatically convert and retry.
+      {/* Payment method tabs */}
+      <div className="space-y-2">
+        {/* Top row: Credit Card + Google Pay */}
+        <div className="grid grid-cols-2 gap-2">
+          {tabs.slice(0, 2).map((tab) => {
+            const isSelected = paymentTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setPaymentTab(tab.id)}
+                className={`relative flex items-center gap-2 rounded-lg py-3 px-3 transition-all duration-200 cursor-pointer ${
+                  isSelected
+                    ? "border-2 border-[#22C55E] bg-white"
+                    : "border border-[#D1D5DB] bg-[#F9FAFB] hover:border-[#9CA3AF]"
+                }`}
+              >
+                {isSelected && (
+                  <span className="absolute -top-1.5 right-2">
+                    <CheckIcon />
+                  </span>
+                )}
+                <span className="text-[#1F2937]">{tab.icon}</span>
+                <span className="text-sm font-medium text-[#4B5563]">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {/* Apple Pay - always visible full width */}
+        {(() => {
+          const tab = tabs[2];
+          const isSelected = paymentTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setPaymentTab(tab.id)}
+              className={`relative w-full flex items-center gap-2 rounded-lg py-3 px-3 transition-all duration-200 cursor-pointer ${
+                isSelected
+                  ? "border-2 border-[#22C55E] bg-white"
+                  : "border border-[#D1D5DB] bg-[#F9FAFB] hover:border-[#9CA3AF]"
+              }`}
+            >
+              {isSelected && (
+                <span className="absolute -top-1.5 right-2">
+                  <CheckIcon />
+                </span>
+              )}
+              <span className="text-[#1F2937]">{tab.icon}</span>
+              <span className="text-sm font-medium text-[#4B5563]">{tab.label}</span>
+            </button>
+          );
+        })()}
+      </div>
+
+      {/* Express Checkout - mounted only on Google Pay tab */}
+      {paymentTab === "google_pay" && (
+        <div className="space-y-3">
+          <p className="text-sm text-[#6B7280] text-center">
+            Tap the button below to pay with Google Pay
+          </p>
+          <ExpressCheckoutElement
+            onConfirm={handleExpressCheckoutConfirm}
+            onReady={handleExpressReady}
+            options={{
+              buttonType: {
+                googlePay: "buy",
+              },
+              buttonTheme: {
+                googlePay: "black",
+              },
+              buttonHeight: 48,
+              layout: {
+                maxColumns: 1,
+                maxRows: 1,
+                overflow: "auto",
+              },
+            }}
+          />
+        </div>
+      )}
+
+      {/* Apple Pay - always show availability message (requires Safari + Apple device) */}
+      {paymentTab === "apple_pay" && (
+        <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-5 text-center">
+          <img src="/img/apple-pay.svg" alt="Apple Pay" className="h-8 mx-auto mb-3 opacity-40" />
+          <p className="text-sm text-[#6B7280]">
+            Apple Pay is available on Safari with an Apple device.
+          </p>
+          <p className="text-xs text-[#9CA3AF] mt-1">
+            Use an iPhone, iPad, or Mac with Safari to pay with Apple Pay.
           </p>
         </div>
       )}
 
-      {/* Apple Pay / Google Pay */}
-      {canPaymentRequest && paymentRequest && (
-        <div className="card-glow p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-            Quick payment
-          </h2>
-          <PaymentRequestButtonElement
+      {/* Card form - always mounted, hidden via CSS when not on card tab */}
+      <form onSubmit={handleCardSubmit} className={paymentTab === "card" ? "space-y-4" : "hidden"}>
+        <div className="space-y-3">
+          <PaymentElement
             options={{
-              paymentRequest,
-              style: {
-                paymentRequestButton: {
-                  type: "default",
-                  theme: "dark",
-                  height: "48px",
-                },
-              },
-            }}
-          />
-          <div className="flex items-center gap-3 text-gray-500 text-xs">
-            <div className="flex-1 h-px bg-gray-800" />
-            <span>or pay with card</span>
-            <div className="flex-1 h-px bg-gray-800" />
-          </div>
-        </div>
-      )}
-
-      {/* Card Element */}
-      <div className="card-glow p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-          Card details
-        </h2>
-        <input
-          type="text"
-          placeholder="Name on card"
-          value={cardholderName}
-          onChange={(e) => setCardholderName(e.target.value.toUpperCase())}
-          autoComplete="cc-name"
-          className="w-full px-4 py-3 input-glow text-sm uppercase"
-        />
-        <div className="p-3 input-glow rounded-lg">
-          <CardElement
-            options={{
-              style: {
-                base: {
-                  fontSize: "14px",
-                  color: "#fff",
-                  "::placeholder": { color: "#4B5563" },
-                  iconColor: "#8B5CF6",
-                },
-                invalid: { color: "#ef4444" },
+              layout: "tabs",
+              loader: "never",
+              wallets: {
+                applePay: "never",
+                googlePay: "never",
               },
             }}
           />
         </div>
+      </form>
 
-        {paymentError && (
-          <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <span className="text-red-500 text-lg mt-0.5">!</span>
-              <div className="flex-1">
-                <h4 className="text-red-400 font-semibold text-sm">{paymentError.title}</h4>
-                <p className="text-gray-300 text-sm mt-1">{paymentError.message}</p>
-                <p className="text-gray-400 text-xs mt-2">{paymentError.action}</p>
-                {paymentError.isRetryable && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentError(null)}
-                    className="mt-2 text-xs text-purple-400 hover:text-purple-300"
-                  >
-                    Tentar novamente
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
+      {/* Buy button - only on card tab */}
+      {paymentTab === "card" && (
         <button
           type="button"
-          onClick={handleCardSubmit}
+          onClick={(e: any) => handleCardSubmit(e)}
           disabled={!stripe || processing || loading}
-          className="w-full py-3.5 btn-cta text-base disabled:opacity-50"
+          className="w-full py-3.5 btn-cta text-base disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20"
         >
           {processing ? (
             <span className="flex items-center justify-center gap-2">
@@ -276,10 +299,15 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
               Processing...
             </span>
           ) : (
-            <>Pay {formatAmount(amount, currency)}</>
+            <span className="flex items-center justify-center gap-2">
+              Buy now
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </span>
           )}
         </button>
-      </div>
+      )}
     </div>
   );
 }
@@ -291,12 +319,29 @@ export function StripePayment(props: Props) {
       stripe={stripePromise}
       options={{
         clientSecret: props.clientSecret,
+        locale: 'en',
         appearance: {
-          theme: "night",
+          theme: "stripe",
           variables: {
-            colorPrimary: "#8B5CF6",
-            colorBackground: "#0A0A0F",
-            colorText: "#ffffff",
+            colorPrimary: "#22C55E",
+            colorBackground: "#FFFFFF",
+            colorText: "#1F2937",
+            colorDanger: "#EF4444",
+            fontFamily: "system-ui, sans-serif",
+            borderRadius: "8px",
+          },
+          rules: {
+            ".Input": {
+              backgroundColor: "#FFFFFF",
+              border: "1px solid #E5E7EB",
+            },
+            ".Input:focus": {
+              borderColor: "#22C55E",
+              boxShadow: "0 0 0 1px #22C55E",
+            },
+            ".Label": {
+              color: "#6B7280",
+            },
           },
         },
       }}

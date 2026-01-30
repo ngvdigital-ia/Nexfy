@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { products, productOffers, orderBumps } from "@/lib/db/schema";
 import { notFound } from "next/navigation";
+import Script from "next/script";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { getCurrencyFromCountry, type CurrencyCode } from "@/lib/currencies";
 import type { Metadata } from "next";
@@ -36,19 +37,16 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
 
   if (!product) notFound();
 
-  // Buscar ofertas ativas
   const offers = await db
     .select()
     .from(productOffers)
     .where(and(eq(productOffers.productId, product.id), eq(productOffers.isActive, true)));
 
-  // Buscar order bumps
   const bumps = await db
     .select()
     .from(orderBumps)
     .where(and(eq(orderBumps.productId, product.id), eq(orderBumps.isActive, true)));
 
-  // Determinar oferta: por hash na URL ou default
   const offerHash = searchParams.offer;
   const selectedOffer = offerHash
     ? offers.find((o) => o.hash === offerHash)
@@ -56,7 +54,6 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
 
   const price = selectedOffer ? Number(selectedOffer.price) : Number(product.price);
 
-  // UTM params
   const utm = {
     utmSource: searchParams.utm_source || searchParams.src || "",
     utmMedium: searchParams.utm_medium || "",
@@ -65,12 +62,10 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
     utmTerm: searchParams.utm_term || "",
   };
 
-  // Pegar país/moeda dos cookies (setados pelo middleware)
   const cookieStore = cookies();
   const userCountry = cookieStore.get("user_country")?.value || "US";
   const savedCurrency = cookieStore.get("user_currency")?.value;
 
-  // Validar que a moeda é suportada
   const validCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "BRL", "MXN", "JPY", "CHF", "INR"];
   const userCurrency: CurrencyCode = (savedCurrency && validCurrencies.includes(savedCurrency))
     ? savedCurrency as CurrencyCode
@@ -80,7 +75,9 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
     <>
       {/* Tracking pixels */}
       {product.facebookPixelId && (
-        <script
+        <Script
+          id="fb-pixel"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -97,8 +94,13 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
       )}
       {product.googleAnalyticsId && (
         <>
-          <script async src={`https://www.googletagmanager.com/gtag/js?id=${product.googleAnalyticsId}`} />
-          <script
+          <Script
+            src={`https://www.googletagmanager.com/gtag/js?id=${product.googleAnalyticsId}`}
+            strategy="afterInteractive"
+          />
+          <Script
+            id="ga-config"
+            strategy="afterInteractive"
             dangerouslySetInnerHTML={{
               __html: `
                 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -111,29 +113,10 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
       )}
 
       <div
-        className="min-h-screen py-6 px-4"
-        style={{ backgroundColor: "#000000" }}
+        className="checkout-light min-h-screen py-8 px-4"
+        style={{ backgroundColor: "#F5F5F5" }}
       >
-        <div className="max-w-lg mx-auto">
-          {/* Header do produto */}
-          <div className="text-center mb-6">
-            {product.checkoutImage && (
-              <img
-                src={product.checkoutImage}
-                alt={product.name}
-                className="w-24 h-24 rounded-xl mx-auto mb-4 object-cover border border-[rgba(139,92,246,0.2)]"
-              />
-            )}
-            <h1 className="text-xl font-bold text-white">
-              {product.checkoutTitle || product.name}
-            </h1>
-            {product.checkoutDescription && (
-              <p className="text-gray-400 text-sm mt-1">
-                {product.checkoutDescription}
-              </p>
-            )}
-          </div>
-
+        <div className="max-w-6xl mx-auto">
           <CheckoutForm
             product={{
               id: product.id,
@@ -145,11 +128,13 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
               cardEnabled: product.cardEnabled ?? true,
               boletoEnabled: product.boletoEnabled ?? false,
               maxInstallments: product.maxInstallments ?? 12,
-              buttonColor: product.checkoutButtonColor || "#3b82f6",
-              buttonText: product.checkoutButtonText || "Complete Purchase",
+              buttonColor: product.checkoutButtonColor || "#22C55E",
+              buttonText: product.checkoutButtonText || "Buy now",
               facebookPixelId: product.facebookPixelId,
               googleAnalyticsId: product.googleAnalyticsId,
               gateway: product.gateway || "mercadopago",
+              checkoutImage: product.checkoutImage,
+              checkoutTitle: product.checkoutTitle,
             }}
             offer={selectedOffer ? { hash: selectedOffer.hash, price: Number(selectedOffer.price) } : null}
             bumps={bumps.map((b) => ({
