@@ -734,6 +734,7 @@ export function CheckoutForm({
                 amount={stripeAmount || totalPrice}
                 currency={stripeCurrency || userCurrency.toLowerCase()}
                 loading={loading}
+                disabled={!name.trim() || !email.trim() || !phone.trim() || email.toLowerCase() !== confirmEmail.toLowerCase()}
                 onSuccess={() => {
                   trackPurchase(stripeTransactionId || 0);
                   window.location.href = `/obrigado/${stripeTransactionId}`;

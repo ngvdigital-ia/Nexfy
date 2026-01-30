@@ -24,6 +24,7 @@ interface Props {
   amount: number;
   currency?: string;
   loading: boolean;
+  disabled?: boolean;
 }
 
 function isCurrencyError(error: any): boolean {
@@ -77,7 +78,7 @@ function CheckIcon() {
   );
 }
 
-function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading }: Props) {
+function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading, disabled }: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
@@ -287,7 +288,7 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
         <button
           type="button"
           onClick={(e: any) => handleCardSubmit(e)}
-          disabled={!stripe || processing || loading}
+          disabled={!stripe || processing || loading || disabled}
           className="w-full py-3.5 btn-cta text-base disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20"
         >
           {processing ? (
