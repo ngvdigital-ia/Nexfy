@@ -5,6 +5,7 @@ import { products, productOffers, orderBumps, coupons, transactions } from "@/li
 import { getGateway } from "@/lib/gateways";
 import { createPaymentSchema } from "@/lib/validators/payment";
 import type { GatewayCredentials } from "@/lib/gateways/types";
+import { sendSaleToUtmify } from "@/lib/utmify";
 
 export async function POST(req: NextRequest) {
   try {
@@ -154,6 +155,26 @@ export async function POST(req: NextRequest) {
         utmTerm: data.utmTerm,
       })
       .returning();
+
+    // Enviar checkout iniciado para UTMify (pending = waiting_payment)
+    sendSaleToUtmify({
+      orderId: String(transaction.id),
+      platform: "NexFy",
+      paymentMethod: data.paymentMethod as "pix" | "credit_card" | "boleto",
+      status: "pending",
+      customerEmail: data.customer.email,
+      customerPhone: data.customer.phone || undefined,
+      customerDocument: (data.customer.cpf || "").replace(/\D/g, "") || undefined,
+      amount: totalAmount,
+      createdAt: new Date(),
+      utm: {
+        utm_source: data.utmSource || undefined,
+        utm_medium: data.utmMedium || undefined,
+        utm_campaign: data.utmCampaign || undefined,
+        utm_content: data.utmContent || undefined,
+        utm_term: data.utmTerm || undefined,
+      },
+    }, { userId: product.userId }).catch((err) => console.error("UTMify checkout initiated error:", err));
 
     // Processar pagamento no gateway
     const credentials = (product.gatewayCredentials || {}) as GatewayCredentials;

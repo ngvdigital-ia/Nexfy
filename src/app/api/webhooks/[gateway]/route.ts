@@ -6,6 +6,7 @@ import { getGateway } from "@/lib/gateways";
 import type { GatewayCredentials } from "@/lib/gateways/types";
 import { waitUntil } from "@vercel/functions";
 import { sendSaleToUtmify } from "@/lib/utmify";
+import { sendFacebookPurchaseEvent } from "@/lib/facebookCapi";
 import crypto from "crypto";
 import { dispatchWebhooks } from "@/lib/webhookDispatch";
 
@@ -98,6 +99,60 @@ async function processWebhook(
 ) {
   try {
     const payload = JSON.parse(rawBody);
+
+    // Stripe: tratar charge.dispute.created como chargeback
+    if (gatewayName === "stripe" && payload.type === "charge.dispute.created") {
+      const chargeId = payload.data?.object?.charge;
+      const paymentIntentId = payload.data?.object?.payment_intent;
+      const lookupId = paymentIntentId || chargeId;
+      if (!lookupId) {
+        await updateLog(logId, 400, "Dispute: sem payment_intent ou charge");
+        return;
+      }
+
+      const [disputeTx] = await db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.gateway, "stripe"), eq(transactions.gatewayPaymentId, lookupId)))
+        .limit(1);
+
+      if (!disputeTx) {
+        await updateLog(logId, 404, "Dispute: transacao nao encontrada");
+        return;
+      }
+
+      if (disputeTx.status === "chargeback") {
+        await updateLog(logId, 200, "Dispute: ja processado");
+        return;
+      }
+
+      await db.update(transactions).set({ status: "chargeback", updatedAt: new Date() }).where(eq(transactions.id, disputeTx.id));
+      await db.update(entitlements).set({ isActive: false, revokedAt: new Date() }).where(eq(entitlements.transactionId, disputeTx.id));
+
+      const [disputeProduct] = await db.select().from(products).where(eq(products.id, disputeTx.productId)).limit(1);
+
+      if (disputeProduct) {
+        sendSaleToUtmify({
+          orderId: String(disputeTx.id),
+          platform: "NexFy",
+          paymentMethod: disputeTx.paymentMethod as "pix" | "credit_card" | "boleto",
+          status: "chargeback",
+          customerEmail: disputeTx.customerEmail,
+          amount: Number(disputeTx.amount),
+        }, { userId: disputeProduct.userId }).catch((err) => console.error("UTMify chargeback sync error:", err));
+
+        dispatchWebhooks("payment.chargeback", {
+          transactionId: disputeTx.id,
+          productId: disputeTx.productId,
+          amount: Number(disputeTx.amount),
+          customerEmail: disputeTx.customerEmail,
+          customerName: disputeTx.customerName,
+        }, disputeTx.productId, disputeProduct.userId).catch((err) => console.error("Webhook chargeback dispatch error:", err));
+      }
+
+      await updateLog(logId, 200, `Chargeback processado para tx ${disputeTx.id}`);
+      return;
+    }
 
     // Extrair payment ID do payload baseado no gateway
     const paymentId = extractPaymentId(gatewayName, payload);
@@ -226,6 +281,21 @@ async function processWebhook(
         },
       }, { userId: product.userId }).catch((err) => console.error("UTMify sync error:", err));
 
+      // Enviar evento Purchase para Facebook Conversions API
+      if (product.facebookPixelId && product.facebookAccessToken) {
+        sendFacebookPurchaseEvent({
+          pixelId: product.facebookPixelId,
+          accessToken: product.facebookAccessToken,
+          email: tx.customerEmail,
+          phone: tx.customerPhone || undefined,
+          amount: Number(tx.amount),
+          currency: tx.currency || "BRL",
+          transactionId: tx.id,
+          productName: product.name,
+          productId: product.id,
+        }).catch((err) => console.error("Facebook CAPI error:", err));
+      }
+
       // Se é upsell (parentTransactionId != null), NÃO disparar webhook aqui
       // pois já foi disparado pela rota /api/payments/upsell ou /api/upsell/accept
       const isUpsell = !!tx.parentTransactionId;
@@ -327,6 +397,48 @@ async function processWebhook(
         productId: transaction.productId,
         amount: Number(transaction.amount),
         customerEmail: transaction.customerEmail,
+      }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
+
+      // Enviar para UTMify com status refused
+      sendSaleToUtmify({
+        orderId: String(transaction.id),
+        platform: "NexFy",
+        paymentMethod: transaction.paymentMethod as "pix" | "credit_card" | "boleto",
+        status: "refused",
+        customerEmail: transaction.customerEmail,
+        amount: Number(transaction.amount),
+        utm: {
+          utm_source: transaction.utmSource || undefined,
+          utm_medium: transaction.utmMedium || undefined,
+          utm_campaign: transaction.utmCampaign || undefined,
+          utm_content: transaction.utmContent || undefined,
+          utm_term: transaction.utmTerm || undefined,
+        },
+      }, { userId: product.userId }).catch((err) => console.error("UTMify refused sync error:", err));
+    }
+
+    // Chargeback handler
+    if (status.status === "chargeback" && transaction.status !== "chargeback") {
+      await db
+        .update(entitlements)
+        .set({ isActive: false, revokedAt: new Date() })
+        .where(eq(entitlements.transactionId, transaction.id));
+
+      sendSaleToUtmify({
+        orderId: String(transaction.id),
+        platform: "NexFy",
+        paymentMethod: transaction.paymentMethod as "pix" | "credit_card" | "boleto",
+        status: "chargeback",
+        customerEmail: transaction.customerEmail,
+        amount: Number(transaction.amount),
+      }, { userId: product.userId }).catch((err) => console.error("UTMify chargeback sync error:", err));
+
+      await dispatchWebhooks("payment.chargeback", {
+        transactionId: transaction.id,
+        productId: transaction.productId,
+        amount: Number(transaction.amount),
+        customerEmail: transaction.customerEmail,
+        customerName: transaction.customerName,
       }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
     }
 

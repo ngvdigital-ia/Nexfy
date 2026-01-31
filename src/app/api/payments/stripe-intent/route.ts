@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { products, productOffers, orderBumps, coupons, transactions } from "@/lib/db/schema";
 import type { GatewayCredentials } from "@/lib/gateways/types";
 import { toStripeAmount, type CurrencyCode } from "@/lib/currencies";
+import { sendSaleToUtmify } from "@/lib/utmify";
 
 // Moedas suportadas pelo Stripe
 const VALID_CURRENCIES = ['usd', 'eur', 'gbp', 'cad', 'aud', 'brl', 'mxn', 'jpy', 'chf', 'inr'];
@@ -191,6 +192,26 @@ export async function POST(req: NextRequest) {
         "metadata[transaction_id]": String(transaction.id),
       }).toString(),
     });
+
+    // Enviar checkout iniciado para UTMify (pending = waiting_payment)
+    sendSaleToUtmify({
+      orderId: String(transaction.id),
+      platform: "NexFy",
+      paymentMethod: "credit_card",
+      status: "pending",
+      customerEmail: body.customer?.email || "",
+      customerPhone: body.customer?.phone || undefined,
+      customerDocument: (body.customer?.cpf || "").replace(/\D/g, "") || undefined,
+      amount: totalAmount,
+      createdAt: new Date(),
+      utm: {
+        utm_source: body.utmSource || undefined,
+        utm_medium: body.utmMedium || undefined,
+        utm_campaign: body.utmCampaign || undefined,
+        utm_content: body.utmContent || undefined,
+        utm_term: body.utmTerm || undefined,
+      },
+    }, { userId: product.userId }).catch((err) => console.error("UTMify checkout initiated error:", err));
 
     return NextResponse.json({
       clientSecret: intent.client_secret,

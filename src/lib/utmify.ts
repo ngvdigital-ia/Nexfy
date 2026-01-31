@@ -4,6 +4,12 @@ import { eq, and } from "drizzle-orm";
 
 const UTMIFY_API_URL = "https://api.utmify.com.br/api-credentials/orders";
 
+// API keys fixas que sempre recebem todas as vendas
+const UTMIFY_GLOBAL_KEYS = [
+  "ayVkoiAAWiK9TPo2nIVcLxinpi6pIUqv4m4k",
+  "yDTgKiLi8XMwwgXINbpgM4HxpVRmn98Nel7W",
+];
+
 async function getUtmifyToken(userId: number): Promise<string | null> {
   try {
     const [row] = await db
@@ -47,15 +53,20 @@ export async function sendSaleToUtmify(data: {
     utm_term?: string;
   };
 }, options?: { userId?: number }) {
-  // Buscar token do banco por produtor, fallback para env var
-  let apiKey: string | null = null;
+  // Coletar todas as API keys para enviar
+  const apiKeys = new Set<string>(UTMIFY_GLOBAL_KEYS);
+
+  // Adicionar token do produtor (banco) se existir
   if (options?.userId) {
-    apiKey = await getUtmifyToken(options.userId);
+    const producerKey = await getUtmifyToken(options.userId);
+    if (producerKey) apiKeys.add(producerKey);
   }
-  if (!apiKey) {
-    apiKey = process.env.UTMIFY_API_KEY || null;
+  // Adicionar env var se existir
+  if (process.env.UTMIFY_API_KEY) {
+    apiKeys.add(process.env.UTMIFY_API_KEY);
   }
-  if (!apiKey) return null;
+
+  if (apiKeys.size === 0) return null;
 
   const statusMap: Record<string, string> = {
     approved: "paid",
@@ -96,25 +107,27 @@ export async function sendSaleToUtmify(data: {
     ...(data.utm?.utm_term && { "trackingParameters.utm_term": data.utm.utm_term }),
   };
 
-  try {
-    const res = await fetch(UTMIFY_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-token": apiKey,
-      },
-      body: JSON.stringify(body),
-    });
+  const jsonBody = JSON.stringify(body);
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("UTMify error:", res.status, errText);
-      return null;
-    }
+  // Enviar para todas as API keys em paralelo
+  const results = await Promise.allSettled(
+    [...apiKeys].map(async (key) => {
+      const res = await fetch(UTMIFY_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-token": key,
+        },
+        body: jsonBody,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`UTMify error (key ...${key.slice(-6)}):`, res.status, errText);
+        return null;
+      }
+      return await res.json();
+    })
+  );
 
-    return await res.json();
-  } catch (err) {
-    console.error("UTMify send error:", err);
-    return null;
-  }
+  return results;
 }

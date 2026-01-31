@@ -71,6 +71,7 @@ export const products = pgTable("products", {
   boletoEnabled: boolean("boleto_enabled").default(false),
   maxInstallments: integer("max_installments").default(12),
   facebookPixelId: varchar("facebook_pixel_id", { length: 100 }),
+  facebookAccessToken: text("facebook_access_token"),
   googleAnalyticsId: varchar("google_analytics_id", { length: 100 }),
   starfyEnabled: boolean("starfy_enabled").default(false),
   isActive: boolean("is_active").default(true),
@@ -98,6 +99,9 @@ export const orderBumps = pgTable("order_bumps", {
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  imageUrl: varchar("image_url", { length: 500 }),
+  originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+  socialProof: varchar("social_proof", { length: 255 }),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -144,6 +148,9 @@ export const transactions = pgTable("transactions", {
   cardLastFour: varchar("card_last_four", { length: 4 }),
   cardBrand: varchar("card_brand", { length: 20 }),
   installments: integer("installments").default(1),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  stripePaymentMethodId: varchar("stripe_payment_method_id", { length: 255 }),
+  parentTransactionId: integer("parent_transaction_id"),
   metadata: jsonb("metadata"),
   utmSource: varchar("utm_source", { length: 255 }),
   utmMedium: varchar("utm_medium", { length: 255 }),
@@ -160,6 +167,46 @@ export const transactions = pgTable("transactions", {
   userIdx: index("transactions_user_idx").on(table.userId),
   productIdx: index("transactions_product_idx").on(table.productId),
 }));
+
+// ─── Upsells ────────────────────────────────────────────
+export const upsells = pgTable("upsells", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id),
+  upsellProductId: integer("upsell_product_id").notNull().references(() => products.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  imageUrl: text("image_url"),
+  videoUrl: text("video_url"),
+  originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+  ctaText: varchar("cta_text", { length: 255 }).default("SIM, EU QUERO!"),
+  declineText: varchar("decline_text", { length: 255 }).default("Não, obrigado"),
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  isExternal: boolean("is_external").default(false),
+  externalUrl: text("external_url"),
+  acceptRedirectUrl: text("accept_redirect_url"),
+  declineRedirectUrl: text("decline_redirect_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const upsellTokens = pgTable("upsell_tokens", {
+  id: serial("id").primaryKey(),
+  token: varchar("token", { length: 64 }).unique().notNull(),
+  transactionId: integer("transaction_id").notNull().references(() => transactions.id),
+  upsellId: integer("upsell_id").notNull().references(() => upsells.id),
+  status: varchar("status", { length: 20 }).default("pending"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const upsellPurchases = pgTable("upsell_purchases", {
+  id: serial("id").primaryKey(),
+  transactionId: integer("transaction_id").notNull().references(() => transactions.id),
+  upsellId: integer("upsell_id").notNull().references(() => upsells.id),
+  upsellTransactionId: integer("upsell_transaction_id").notNull().references(() => transactions.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // ─── Entitlements ────────────────────────────────────────
 export const entitlements = pgTable("entitlements", {
@@ -323,6 +370,7 @@ export const webhooks = pgTable("webhooks", {
   productId: integer("product_id").references(() => products.id),
   url: text("url").notNull(),
   events: jsonb("events"),
+  secret: varchar("secret", { length: 64 }),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -367,8 +415,14 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   user: one(users, { fields: [products.userId], references: [users.id] }),
   offers: many(productOffers),
   orderBumps: many(orderBumps),
+  upsells: many(upsells),
   transactions: many(transactions),
   courses: many(courses),
+}));
+
+export const upsellsRelations = relations(upsells, ({ one }) => ({
+  product: one(products, { fields: [upsells.productId], references: [products.id] }),
+  upsellProduct: one(products, { fields: [upsells.upsellProductId], references: [products.id] }),
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({

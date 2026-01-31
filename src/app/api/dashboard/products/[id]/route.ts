@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     "boletoEnabled", "maxInstallments", "deliveryType", "deliveryUrl",
     "deliveryEmail", "thankYouPageUrl", "checkoutTitle", "checkoutDescription",
     "checkoutImage", "checkoutBgColor", "checkoutButtonColor", "checkoutButtonText",
-    "facebookPixelId", "googleAnalyticsId", "starfyEnabled", "isActive",
+    "facebookPixelId", "facebookAccessToken", "googleAnalyticsId", "starfyEnabled", "isActive",
   ];
 
   const updateData: Record<string, any> = { updatedAt: new Date() };

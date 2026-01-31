@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import BumpsTab from "./BumpsTab";
+import UpsellsTab from "./UpsellsTab";
+import CheckoutPreview from "./CheckoutPreview";
 
-type Tab = "general" | "checkout" | "payment" | "tracking" | "bumps";
+type Tab = "general" | "checkout" | "payment" | "tracking" | "bumps" | "upsells" | "preview";
 
 export default function EditProductPage() {
   const { id } = useParams();
@@ -74,6 +76,8 @@ export default function EditProductPage() {
     { key: "payment", label: "Pagamento" },
     { key: "tracking", label: "Tracking" },
     { key: "bumps", label: "Order Bumps" },
+    { key: "upsells", label: "Upsells" },
+    { key: "preview", label: "Preview" },
   ];
 
   const checkoutUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/checkout/${product.hash}`;
@@ -185,12 +189,17 @@ export default function EditProductPage() {
         {tab === "tracking" && (
           <div className="bg-gray-900/80 border border-gray-800/50 rounded-xl p-4 space-y-3">
             <Field label="Facebook Pixel ID" name="facebookPixelId" defaultValue={product.facebookPixelId || ""} />
+            <Field label="Facebook Access Token (CAPI)" name="facebookAccessToken" defaultValue={product.facebookAccessToken || ""} />
             <Field label="Google Analytics ID" name="googleAnalyticsId" defaultValue={product.googleAnalyticsId || ""} />
             <CheckboxField label="Starfy habilitado" name="starfyEnabled" defaultChecked={product.starfyEnabled} />
           </div>
         )}
 
         {tab === "bumps" && <BumpsTab productId={String(id)} />}
+
+        {tab === "upsells" && <UpsellsTab productId={String(id)} />}
+
+        {tab === "preview" && <CheckoutPreview product={product} />}
 
         <button
           type="submit"

@@ -13,6 +13,7 @@ import {
 import type { GatewayCredentials } from "@/lib/gateways/types";
 import { toStripeAmount, type CurrencyCode } from "@/lib/currencies";
 import { dispatchWebhooks } from "@/lib/webhookDispatch";
+import { sendSaleToUtmify } from "@/lib/utmify";
 import { waitUntil } from "@vercel/functions";
 
 export async function GET(req: NextRequest) {
@@ -269,6 +270,19 @@ export async function GET(req: NextRequest) {
     } catch (entitlementErr) {
       console.error("Upsell entitlement error (non-blocking):", entitlementErr);
     }
+
+    // Enviar upsell aprovado para UTMify
+    sendSaleToUtmify({
+      orderId: String(newTransaction.id),
+      platform: "NexFy",
+      paymentMethod: "credit_card",
+      status: "approved",
+      customerEmail: originalTx.customerEmail,
+      customerPhone: originalTx.customerPhone || undefined,
+      customerDocument: originalTx.customerCpf || undefined,
+      amount: Number(newTransaction.amount),
+      approvedAt: new Date(),
+    }, { userId: product.userId }).catch((err) => console.error("UTMify upsell accept sync error:", err));
 
     // Dispatch webhook para plataforma de cursos
     waitUntil(
