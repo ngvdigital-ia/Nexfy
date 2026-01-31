@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -84,10 +84,20 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
   const [processing, setProcessing] = useState(false);
   const [paymentTab, setPaymentTab] = useState<PaymentTab>("card");
   const [expressReady, setExpressReady] = useState(false);
+  const [cardholderName, setCardholderName] = useState("");
   const [expressAvailable, setExpressAvailable] = useState<{
     googlePay: boolean;
     applePay: boolean;
   }>({ googlePay: false, applePay: false });
+
+  // Refresh Elements session when amount changes (e.g. bump toggled)
+  const prevAmountRef = useRef(amount);
+  useEffect(() => {
+    if (prevAmountRef.current !== amount && elements) {
+      prevAmountRef.current = amount;
+      (elements as any).fetchUpdates?.();
+    }
+  }, [amount, elements]);
 
   async function confirmPayment() {
     if (!stripe || !elements) return;
@@ -98,6 +108,11 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
       elements,
       confirmParams: {
         return_url: `${window.location.origin}/obrigado`,
+        payment_method_data: {
+          billing_details: {
+            name: cardholderName || undefined,
+          },
+        },
       },
       redirect: "if_required",
     });
@@ -249,31 +264,82 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
                 maxRows: 1,
                 overflow: "auto",
               },
+              paymentMethods: {
+                googlePay: "always",
+                applePay: "never",
+              },
             }}
           />
         </div>
       )}
 
-      {/* Apple Pay - always show availability message (requires Safari + Apple device) */}
+      {/* Apple Pay - render ExpressCheckoutElement on Safari/Apple devices, fallback message otherwise */}
       {paymentTab === "apple_pay" && (
-        <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-5 text-center">
-          <img src="/img/apple-pay.svg" alt="Apple Pay" width="54" height="32" className="h-8 mx-auto mb-3 opacity-40" />
-          <p className="text-sm text-[#6B7280]">
-            Apple Pay is available on Safari with an Apple device.
+        <div className="space-y-3">
+          <p className="text-sm text-[#6B7280] text-center">
+            Tap the button below to pay with Apple Pay
           </p>
-          <p className="text-xs text-[#9CA3AF] mt-1">
-            Use an iPhone, iPad, or Mac with Safari to pay with Apple Pay.
-          </p>
+          <ExpressCheckoutElement
+            onConfirm={handleExpressCheckoutConfirm}
+            onReady={handleExpressReady}
+            options={{
+              buttonType: {
+                applePay: "buy",
+              },
+              buttonTheme: {
+                applePay: "black",
+              },
+              buttonHeight: 48,
+              layout: {
+                maxColumns: 1,
+                maxRows: 1,
+                overflow: "auto",
+              },
+              paymentMethods: {
+                applePay: "always",
+                googlePay: "never",
+              },
+            }}
+          />
+          {expressReady && !expressAvailable.applePay && (
+            <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-5 text-center">
+              <img src="/img/apple-pay.svg" alt="Apple Pay" width="54" height="32" className="h-8 mx-auto mb-3 opacity-40" />
+              <p className="text-sm text-[#6B7280]">
+                Apple Pay is available on Safari with an Apple device.
+              </p>
+              <p className="text-xs text-[#9CA3AF] mt-1">
+                Use an iPhone, iPad, or Mac with Safari to pay with Apple Pay.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
       {/* Card form - always mounted, hidden via CSS when not on card tab */}
       <form onSubmit={handleCardSubmit} className={paymentTab === "card" ? "space-y-4" : "hidden"}>
         <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-[#6B7280] mb-1">Name on card</label>
+            <input
+              type="text"
+              value={cardholderName}
+              onChange={(e) => setCardholderName(e.target.value)}
+              placeholder="Full name as displayed on card"
+              className="w-full px-3 py-2.5 rounded-lg border border-[#E5E7EB] bg-white text-[#1F2937] text-sm placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#22C55E] focus:ring-1 focus:ring-[#22C55E] transition-colors"
+            />
+          </div>
           <PaymentElement
             options={{
               layout: "tabs",
               loader: "never",
+              fields: {
+                billingDetails: {
+                  name: "never",
+                  address: {
+                    country: "never",
+                  },
+                },
+              },
               wallets: {
                 applePay: "never",
                 googlePay: "never",
