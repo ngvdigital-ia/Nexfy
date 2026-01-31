@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions, webhookLogs, products, entitlements, users } from "@/lib/db/schema";
+import { transactions, webhookLogs, products, entitlements, users, orderBumps } from "@/lib/db/schema";
 import { getGateway } from "@/lib/gateways";
 import type { GatewayCredentials } from "@/lib/gateways/types";
 import { waitUntil } from "@vercel/functions";
@@ -226,17 +226,51 @@ async function processWebhook(
         },
       }, { userId: product.userId }).catch((err) => console.error("UTMify sync error:", err));
 
-      // Dispatch webhooks genéricos (Vurb, CFlux, etc.)
-      await dispatchWebhooks("payment.approved", {
-        transactionId: tx.id,
-        productId: tx.productId,
-        amount: Number(tx.amount),
-        customerEmail: tx.customerEmail,
-        customerName: tx.customerName,
-        customerPhone: tx.customerPhone || "",
-        paymentMethod: tx.paymentMethod,
-        paidAt: new Date().toISOString(),
-      }, tx.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
+      // Se é upsell (parentTransactionId != null), NÃO disparar webhook aqui
+      // pois já foi disparado pela rota /api/payments/upsell ou /api/upsell/accept
+      const isUpsell = !!tx.parentTransactionId;
+
+      if (!isUpsell) {
+        // Dispatch webhooks genéricos (Vurb, CFlux, etc.)
+        await dispatchWebhooks("payment.approved", {
+          transactionId: tx.id,
+          productId: tx.productId,
+          amount: Number(tx.amount),
+          customerEmail: tx.customerEmail,
+          customerName: tx.customerName,
+          customerPhone: tx.customerPhone || "",
+          paymentMethod: tx.paymentMethod,
+          paidAt: new Date().toISOString(),
+        }, tx.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
+
+        // Dispatch webhooks para order bumps selecionados (da metadata da transaction)
+        const txMetadata = (tx.metadata || {}) as { orderBumpIds?: number[] };
+        const selectedBumpIds = txMetadata.orderBumpIds;
+
+        if (selectedBumpIds?.length) {
+          const bumps = await db
+            .select()
+            .from(orderBumps)
+            .where(and(eq(orderBumps.productId, tx.productId), eq(orderBumps.isActive, true)));
+
+          for (const bump of bumps) {
+            if (selectedBumpIds.includes(bump.id) && bump.bumpProductId) {
+              await dispatchWebhooks("payment.approved", {
+                transactionId: tx.id,
+                productId: bump.bumpProductId,
+                amount: Number(bump.price),
+                customerEmail: tx.customerEmail,
+                customerName: tx.customerName,
+                customerPhone: tx.customerPhone || "",
+                paymentMethod: tx.paymentMethod,
+                paidAt: new Date().toISOString(),
+                isOrderBump: true,
+                parentProductId: tx.productId,
+              }, bump.bumpProductId, product.userId).catch((err) => console.error("Bump webhook dispatch error:", err));
+            }
+          }
+        }
+      }
     }
 
     // Se reembolsado, revogar acesso

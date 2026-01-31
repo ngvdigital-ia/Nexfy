@@ -146,6 +146,7 @@ export async function POST(req: NextRequest) {
         customerPhone: data.customer.phone,
         customerCpf: (data.customer.cpf || "").replace(/\D/g, ""),
         installments: data.installments || 1,
+        metadata: data.orderBumpIds?.length ? { orderBumpIds: data.orderBumpIds } : undefined,
         utmSource: data.utmSource,
         utmMedium: data.utmMedium,
         utmCampaign: data.utmCampaign,
