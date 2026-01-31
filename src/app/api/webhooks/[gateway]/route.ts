@@ -191,39 +191,47 @@ async function processWebhook(
 
     // Se aprovado, criar entitlement e usuario (se necessario)
     if (status.status === "approved" && transaction.status !== "approved") {
-      await grantAccess(transaction);
+      // Re-fetch transaction to get latest customer data (PUT may have updated it after initial load)
+      const [freshTx] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, transaction.id))
+        .limit(1);
+      const tx = freshTx || transaction;
+
+      await grantAccess(tx);
 
       // Enviar para UTMify
       sendSaleToUtmify({
-        orderId: String(transaction.id),
+        orderId: String(tx.id),
         platform: "NexFy",
-        paymentMethod: transaction.paymentMethod as "pix" | "credit_card" | "boleto",
+        paymentMethod: tx.paymentMethod as "pix" | "credit_card" | "boleto",
         status: "approved",
-        customerEmail: transaction.customerEmail,
-        customerPhone: transaction.customerPhone || undefined,
-        customerDocument: transaction.customerCpf || undefined,
-        amount: Number(transaction.amount),
+        customerEmail: tx.customerEmail,
+        customerPhone: tx.customerPhone || undefined,
+        customerDocument: tx.customerCpf || undefined,
+        amount: Number(tx.amount),
         approvedAt: new Date(),
         utm: {
-          utm_source: transaction.utmSource || undefined,
-          utm_medium: transaction.utmMedium || undefined,
-          utm_campaign: transaction.utmCampaign || undefined,
-          utm_content: transaction.utmContent || undefined,
-          utm_term: transaction.utmTerm || undefined,
+          utm_source: tx.utmSource || undefined,
+          utm_medium: tx.utmMedium || undefined,
+          utm_campaign: tx.utmCampaign || undefined,
+          utm_content: tx.utmContent || undefined,
+          utm_term: tx.utmTerm || undefined,
         },
       }, { userId: product.userId }).catch((err) => console.error("UTMify sync error:", err));
 
       // Dispatch webhooks genéricos (Vurb, CFlux, etc.)
       await dispatchWebhooks("payment.approved", {
-        transactionId: transaction.id,
-        productId: transaction.productId,
-        amount: Number(transaction.amount),
-        customerEmail: transaction.customerEmail,
-        customerName: transaction.customerName,
-        customerPhone: transaction.customerPhone || "",
-        paymentMethod: transaction.paymentMethod,
+        transactionId: tx.id,
+        productId: tx.productId,
+        amount: Number(tx.amount),
+        customerEmail: tx.customerEmail,
+        customerName: tx.customerName,
+        customerPhone: tx.customerPhone || "",
+        paymentMethod: tx.paymentMethod,
         paidAt: new Date().toISOString(),
-      }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
+      }, tx.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
     }
 
     // Se reembolsado, revogar acesso
