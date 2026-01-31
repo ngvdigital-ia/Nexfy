@@ -253,6 +253,7 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
             Tap the button below to pay with Google Pay
           </p>
           <ExpressCheckoutElement
+            key={`gpay-${amount}`}
             onConfirm={handleExpressCheckoutConfirm}
             onReady={handleExpressReady}
             options={{
@@ -284,6 +285,7 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
             Tap the button below to pay with Apple Pay
           </p>
           <ExpressCheckoutElement
+            key={`applepay-${amount}`}
             onConfirm={handleExpressCheckoutConfirm}
             onReady={handleExpressReady}
             options={{
