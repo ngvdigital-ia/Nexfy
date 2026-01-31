@@ -7,6 +7,7 @@ import type { GatewayCredentials } from "@/lib/gateways/types";
 import { waitUntil } from "@vercel/functions";
 import { sendSaleToUtmify } from "@/lib/utmify";
 import crypto from "crypto";
+import { dispatchWebhooks } from "@/lib/webhookDispatch";
 
 export async function POST(
   req: NextRequest,
@@ -168,6 +169,15 @@ async function processWebhook(
 
     if (status.status === "approved" && !transaction.paidAt) {
       updateData.paidAt = status.paidAt || new Date();
+
+      // Salvar payment method para upsell one-click (Stripe)
+      if (gatewayName === "stripe") {
+        const stripePayload = JSON.parse(rawBody);
+        const paymentMethodId = stripePayload.data?.object?.payment_method;
+        const customerId = stripePayload.data?.object?.customer;
+        if (paymentMethodId) updateData.stripePaymentMethodId = paymentMethodId;
+        if (customerId) updateData.stripeCustomerId = customerId;
+      }
     }
 
     if (status.status === "refunded" && !transaction.refundedAt) {
@@ -202,6 +212,18 @@ async function processWebhook(
           utm_term: transaction.utmTerm || undefined,
         },
       }, { userId: product.userId }).catch((err) => console.error("UTMify sync error:", err));
+
+      // Dispatch webhooks genéricos (Vurb, CFlux, etc.)
+      await dispatchWebhooks("payment.approved", {
+        transactionId: transaction.id,
+        productId: transaction.productId,
+        amount: Number(transaction.amount),
+        customerEmail: transaction.customerEmail,
+        customerName: transaction.customerName,
+        customerPhone: transaction.customerPhone || "",
+        paymentMethod: transaction.paymentMethod,
+        paidAt: new Date().toISOString(),
+      }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
     }
 
     // Se reembolsado, revogar acesso
@@ -238,6 +260,27 @@ async function processWebhook(
         amount: Number(transaction.amount),
         refundedAt: new Date(),
       }, { userId: product.userId }).catch((err) => console.error("UTMify refund sync error:", err));
+
+      // Dispatch webhooks genéricos para refund
+      await dispatchWebhooks("payment.refunded", {
+        transactionId: transaction.id,
+        productId: transaction.productId,
+        amount: Number(transaction.amount),
+        customerEmail: transaction.customerEmail,
+        customerName: transaction.customerName,
+        customerPhone: transaction.customerPhone || "",
+        refundedAt: new Date().toISOString(),
+      }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
+    }
+
+    // Dispatch para recusado
+    if (status.status === "refused" && transaction.status !== "refused") {
+      await dispatchWebhooks("payment.refused", {
+        transactionId: transaction.id,
+        productId: transaction.productId,
+        amount: Number(transaction.amount),
+        customerEmail: transaction.customerEmail,
+      }, transaction.productId, product.userId).catch((err) => console.error("Webhook dispatch error:", err));
     }
 
     await updateLog(logId, 200, `Status atualizado: ${transaction.status} -> ${status.status}`);
