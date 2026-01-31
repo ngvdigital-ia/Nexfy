@@ -149,6 +149,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: intent.error.message }, { status: 400 });
     }
 
+    // Debug: log orderBumpIds recebidos
+    console.log("stripe-intent orderBumpIds:", JSON.stringify(body.orderBumpIds), "length:", body.orderBumpIds?.length);
+
     // Create pending transaction
     const [transaction] = await db
       .insert(transactions)
@@ -166,7 +169,7 @@ export async function POST(req: NextRequest) {
         customerPhone: body.customer?.phone || "",
         customerCpf: (body.customer?.cpf || "").replace(/\D/g, ""),
         installments: 1,
-        metadata: body.orderBumpIds?.length ? { orderBumpIds: body.orderBumpIds } : undefined,
+        metadata: body.orderBumpIds?.length ? { orderBumpIds: body.orderBumpIds } : null,
         stripeCustomerId: stripeCustomerId || null,
         utmSource: body.utmSource,
         utmMedium: body.utmMedium,
