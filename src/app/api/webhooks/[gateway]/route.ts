@@ -191,7 +191,12 @@ async function processWebhook(
 
     // Se aprovado, criar entitlement e usuario (se necessario)
     if (status.status === "approved" && transaction.status !== "approved") {
-      // Re-fetch transaction to get latest customer data (PUT may have updated it after initial load)
+      // Wait for frontend PUT to update customer data (Stripe webhook can arrive before PUT completes)
+      if (!transaction.customerEmail) {
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+
+      // Re-fetch transaction to get latest customer data
       const [freshTx] = await db
         .select()
         .from(transactions)
