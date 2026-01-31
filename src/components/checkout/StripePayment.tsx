@@ -25,6 +25,7 @@ interface Props {
   currency?: string;
   loading: boolean;
   disabled?: boolean;
+  countryCode?: string;
 }
 
 function isCurrencyError(error: any): boolean {
@@ -78,7 +79,7 @@ function CheckIcon() {
   );
 }
 
-function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading, disabled }: Props) {
+function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount, currency = "usd", loading, disabled, countryCode }: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
@@ -111,6 +112,9 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
         payment_method_data: {
           billing_details: {
             name: cardholderName || undefined,
+            address: {
+              country: countryCode || undefined,
+            },
           },
         },
       },

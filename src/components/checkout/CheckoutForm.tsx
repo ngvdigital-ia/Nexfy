@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { PaymentMethods } from "./PaymentMethods";
@@ -104,6 +104,7 @@ export function CheckoutForm({
   const [convertedBumps, setConvertedBumps] = useState<Record<number, number>>({});
   const [exchangeRate, setExchangeRate] = useState(1);
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
+  const [priceReady, setPriceReady] = useState(false);
 
   const [result, setResult] = useState<{
     transactionId: number;
@@ -148,6 +149,11 @@ export function CheckoutForm({
     setUserCountry(country);
     setUserCurrency(currency);
 
+    // Invalidar intent antigo para forçar recriação com nova moeda
+    setStripeClientSecret("");
+    setStripeIntentCreating(false);
+    setPriceReady(false);
+
     const baseCurrency = product.baseCurrency || "USD";
 
     if (currency === baseCurrency) {
@@ -156,6 +162,7 @@ export function CheckoutForm({
       const bumpPrices: Record<number, number> = {};
       bumps.forEach((b) => { bumpPrices[b.id] = b.price; });
       setConvertedBumps(bumpPrices);
+      setPriceReady(true);
       return;
     }
 
@@ -188,6 +195,7 @@ export function CheckoutForm({
       console.error("Failed to convert price:", error);
     } finally {
       setIsLoadingPrice(false);
+      setPriceReady(true);
     }
   }, [product.price, product.baseCurrency, bumps]);
 
@@ -211,6 +219,8 @@ export function CheckoutForm({
 
     if (effectiveCurrency !== baseCurrency) {
       handleCountryChange(effectiveCountry, effectiveCurrency);
+    } else {
+      setPriceReady(true);
     }
   }, []);
 
@@ -414,7 +424,7 @@ export function CheckoutForm({
 
       if (data.status === "approved") {
         trackPurchase(data.transactionId);
-        window.location.href = `/obrigado/${data.transactionId}`;
+        handlePostPurchaseRedirect(data.transactionId);
         return;
       }
 
@@ -444,7 +454,26 @@ export function CheckoutForm({
     }
   }
 
-  // Auto-create Stripe intent on mount
+  async function handlePostPurchaseRedirect(txId: number) {
+    try {
+      const res = await fetch("/api/upsell/redirect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: txId }),
+      });
+      const data = await res.json();
+      const url = data.redirect || `/obrigado/${txId}`;
+      if (url.startsWith("http")) {
+        window.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch {
+      window.location.href = `/obrigado/${txId}`;
+    }
+  }
+
+  // Auto-create Stripe intent on mount and when currency changes
   const [stripeIntentCreating, setStripeIntentCreating] = useState(false);
   useEffect(() => {
     if (
@@ -452,12 +481,43 @@ export function CheckoutForm({
       method === "credit_card" &&
       !stripeClientSecret &&
       !stripeIntentCreating &&
-      !loading
+      !loading &&
+      !isLoadingPrice &&
+      priceReady
     ) {
       setStripeIntentCreating(true);
       createStripeIntent(true).finally(() => setStripeIntentCreating(false));
     }
-  }, [isStripe]);
+  }, [isStripe, stripeClientSecret, isLoadingPrice, priceReady]);
+
+  // Update Stripe Payment Intent when bumps change
+  const prevBumpsRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!stripeClientSecret || !isStripe) return;
+
+    const sorted = [...selectedBumps].sort();
+    const prev = prevBumpsRef.current;
+    if (sorted.join(",") === prev.join(",")) return;
+    prevBumpsRef.current = sorted;
+
+    const piId = stripeClientSecret.split("_secret_")[0];
+
+    fetch("/api/payments/stripe-intent", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentIntentId: piId,
+        productHash: product.hash,
+        offerHash: offer?.hash,
+        couponCode: couponCode || undefined,
+        orderBumpIds: sorted.length ? sorted : undefined,
+        currency: userCurrency.toLowerCase(),
+        exchangeRate,
+      }),
+    }).then(res => res.json()).then(data => {
+      if (data.amount) setStripeAmount(data.amount);
+    }).catch(() => {});
+  }, [selectedBumps, stripeClientSecret]);
 
   const currencySymbol = SUPPORTED_CURRENCIES[userCurrency]?.symbol || "$";
 
@@ -472,7 +532,7 @@ export function CheckoutForm({
         currencySymbol={currencySymbol}
         onApproved={() => {
           trackPurchase(result.transactionId);
-          window.location.href = `/obrigado/${result.transactionId}`;
+          handlePostPurchaseRedirect(result.transactionId);
         }}
       />
     );
@@ -740,9 +800,22 @@ export function CheckoutForm({
                 currency={stripeCurrency || userCurrency.toLowerCase()}
                 loading={loading}
                 disabled={!name.trim() || !email.trim() || !phone.trim() || email.toLowerCase() !== confirmEmail.toLowerCase()}
-                onSuccess={() => {
-                  trackPurchase(stripeTransactionId || 0);
-                  window.location.href = `/obrigado/${stripeTransactionId}`;
+                countryCode={userCountry}
+                onSuccess={async () => {
+                  const txId = stripeTransactionId || 0;
+                  // Update transaction with customer data (PI was created before form was filled)
+                  try {
+                    await fetch("/api/payments/stripe-intent", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        transactionId: txId,
+                        customer: { name, email, phone, cpf },
+                      }),
+                    });
+                  } catch {}
+                  trackPurchase(txId);
+                  handlePostPurchaseRedirect(txId);
                 }}
                 onError={(msg) => setError(msg)}
                 onCurrencyError={retryStripeInBRL}
@@ -771,13 +844,17 @@ export function CheckoutForm({
 
           {/* Order Bumps */}
           {bumps.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <h3 className="text-base font-bold text-[#1F2937]">
+                Buy together
+              </h3>
               {bumps.map((bump) => (
                 <OrderBump
                   key={bump.id}
                   bump={{
                     ...bump,
                     price: convertedBumps[bump.id] || bump.price,
+                    originalPrice: bump.originalPrice ? bump.originalPrice * exchangeRate : null,
                   }}
                   selected={selectedBumps.includes(bump.id)}
                   onToggle={() => toggleBump(bump.id)}
