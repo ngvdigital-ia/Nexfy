@@ -149,9 +149,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: intent.error.message }, { status: 400 });
     }
 
-    // Debug: log orderBumpIds recebidos
-    console.log("stripe-intent orderBumpIds:", JSON.stringify(body.orderBumpIds), "length:", body.orderBumpIds?.length);
-
     // Create pending transaction
     const [transaction] = await db
       .insert(transactions)
