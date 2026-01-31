@@ -335,9 +335,7 @@ function StripeForm({ clientSecret, onSuccess, onError, onCurrencyError, amount,
               fields: {
                 billingDetails: {
                   name: "never",
-                  address: {
-                    country: "never",
-                  },
+                  address: "never",
                 },
               },
               wallets: {
